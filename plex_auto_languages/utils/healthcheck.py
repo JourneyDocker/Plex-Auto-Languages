@@ -2,16 +2,13 @@ import json
 import logging
 from typing import Callable
 from threading import Thread
-from flask import Flask
+from flask import Flask, jsonify
 from werkzeug.serving import make_server
-
 
 flask_logger = logging.getLogger("werkzeug")
 flask_logger.setLevel(logging.ERROR)
 
-
 class HealthcheckServer(Thread):
-
     def __init__(self, name: str, is_ready: Callable, is_healthy: Callable):
         super().__init__()
         self._is_healthy = is_healthy
@@ -25,17 +22,22 @@ class HealthcheckServer(Thread):
         @self._app.route("/health")
         def __health():
             healthy = self._is_healthy()
-            code = 200 if healthy else 400
-            return json.dumps({"healthy": healthy}), code
+            status_code = 200 if healthy else 503
+            logging.info(f"Health check: {'healthy' if healthy else 'unhealthy'} (status {status_code})")
+            return jsonify({"healthy": healthy}), status_code
 
         @self._app.route("/ready")
         def __ready():
             ready = self._is_ready()
-            code = 200 if ready else 400
-            return json.dumps({"ready": ready}), code
+            status_code = 200 if ready else 503
+            logging.info(f"Readiness check: {'ready' if ready else 'not ready'} (status {status_code})")
+            return jsonify({"ready": ready}), status_code
 
     def run(self):
+        logging.info("Starting HealthcheckServer...")
         self._server.serve_forever()
 
     def shutdown(self):
+        logging.info("Shutting down HealthcheckServer...")
         self._server.shutdown()
+        logging.info("HealthcheckServer stopped.")

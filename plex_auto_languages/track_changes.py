@@ -83,11 +83,17 @@ class TrackChanges():
                     self._changes.append((episode, part, AudioStream.STREAMTYPE, matching_audio_stream))
                 # Subtitle stream
                 matching_subtitle_stream = self._match_subtitle_stream(part.subtitleStreams())
-                if current_subtitle_stream is not None and matching_subtitle_stream is None:
-                    self._changes.append((episode, part, SubtitleStream.STREAMTYPE, None))
+                # todo: Don't default back to None, let user's Plex subtitle preferences take precedence. Use config in future
+                # if current_subtitle_stream is not None and matching_subtitle_stream is None:
+                #     self._changes.append((episode, part, SubtitleStream.STREAMTYPE, None))
                 if matching_subtitle_stream is not None and \
                         (current_subtitle_stream is None or matching_subtitle_stream.id != current_subtitle_stream.id):
-                    self._changes.append((episode, part, SubtitleStream.STREAMTYPE, matching_subtitle_stream))
+                    if current_audio_stream.title is not None and "commentary" in current_audio_stream.title.lower() and matching_audio_stream is None:
+                        # if the changed stream was commentary but this ep has none, then don't touch subs
+                        logger.debug(f"[Language Update] Skipping subtitle changes for "
+                         f"episode {self._reference} and user '{self.username}'")
+                    else:
+                        self._changes.append((episode, part, SubtitleStream.STREAMTYPE, matching_subtitle_stream))
         self._update_description(episodes)
         self._computed = True
 
@@ -140,6 +146,13 @@ class TrackChanges():
             return None
         # We only want stream with the same language code
         streams = [s for s in audio_streams if s.languageCode == self._audio_stream.languageCode]
+        # if streams aren't differentiated, set ambiguous flag
+        ambiguous = all(s.title == audio_streams[0].title for s in audio_streams)
+        # attempt to filter commentary tracks
+        if self._audio_stream.title is not None and "commentary" in self._audio_stream.title.lower():
+            streams = [s for s in streams if s.title is not None and "commentary" in s.title.lower()]
+        else:
+            streams = [s for s in streams if s.title is not None and "commentary" not in s.title.lower()]
         if len(streams) == 0:
             return None
         if len(streams) == 1:
@@ -151,8 +164,15 @@ class TrackChanges():
                 scores[index] += 5
             if self._audio_stream.audioChannelLayout == stream.audioChannelLayout:
                 scores[index] += 3
-            if self._audio_stream.channels <= stream.channels:
-                scores[index] += 1
+            if ambiguous:
+                if self._audio_stream.channels < 3:
+                    if self._audio_stream.channels < stream.channels:
+                        # if streams are ambiguous, prefer more channels as a safe choice to avoid commentary (likely 2.0)
+                        # or we could default to first match...
+                        scores[index] += 8
+                else:
+                    if self._audio_stream.channels <= stream.channels:
+                        scores[index] += 1
             if self._audio_stream.title is not None and stream.title is not None and self._audio_stream.title == stream.title:
                 scores[index] += 5
         return streams[scores.index(max(scores))]
@@ -186,6 +206,18 @@ class TrackChanges():
             if self._subtitle_stream.title is not None and stream.title is not None and \
                     self._subtitle_stream.title == stream.title:
                 scores[index] += 5
+            # fix for badly labeled subs -> try break tied scores by ID match
+            # e.g. 0: eng, 1: eng (unflagged forced)
+            # todo this doesnt work, ids are not indexes, they're uids
+            # we'll need to map self's ids to indexes
+            # logger.debug(f"[Special] Checking subtitle IDs "
+            #              f"current {self._subtitle_stream.id} stream '{stream.id:}'")
+            # if self._subtitle_stream.title is not None and stream.title is not None and \
+            #         self._subtitle_stream.id == stream.id:
+            #     logger.debug(f"[Special] Matched subtitle IDs "
+            #              f"current {self._subtitle_stream.title} stream '{stream.title:}'")
+            #     scores[index] += 1
+        logger.debug(f"{scores}\n{streams}")
         return streams[scores.index(max(scores))]
 
     @staticmethod

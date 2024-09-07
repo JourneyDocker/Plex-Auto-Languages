@@ -11,20 +11,19 @@ from plex_auto_languages.utils.configuration import Configuration
 from plex_auto_languages.utils.healthcheck import HealthcheckServer
 
 
-class PlexAutoLanguages():
-
+class PlexAutoLanguages:
     def __init__(self, user_config_path: str):
         self.alive = False
         self.must_stop = False
         self.stop_signal = False
         self.plex_alert_listener = None
 
+        # Configuration
+        self.config = Configuration(user_config_path)
+
         # Health-check server
         self.healthcheck_server = HealthcheckServer("Plex-Auto-Languages", self.is_ready, self.is_healthy)
         self.healthcheck_server.start()
-
-        # Configuration
-        self.config = Configuration(user_config_path)
 
         # Notifications
         self.notifier = None
@@ -45,10 +44,25 @@ class PlexAutoLanguages():
         self.plex = PlexServer(self.config.get("plex.url"), self.config.get("plex.token"), self.notifier, self.config)
 
     def is_ready(self):
+        """
+        Check if the application is ready. This is true if the PlexServer has been initialized.
+        """
+        if not self.plex:
+            logger.warning("Plex server is not initialized yet.")
+            return False
         return self.alive
 
     def is_healthy(self):
-        return self.alive and self.plex.is_alive
+        """
+        Check if the application is healthy. This includes checking if the Plex server is alive.
+        """
+        if not self.alive:
+            logger.warning("Application is not alive.")
+            return False
+        if not self.plex or not self.plex.is_alive:
+            logger.warning("Plex server is not alive.")
+            return False
+        return True
 
     def set_signal_handlers(self):
         signal.signal(signal.SIGINT, self.stop)
@@ -87,6 +101,7 @@ class PlexAutoLanguages():
         if self.scheduler:
             self.scheduler.shutdown()
             self.scheduler.join()
+
         self.healthcheck_server.shutdown()
 
     def alert_listener_error_callback(self, error: Exception):

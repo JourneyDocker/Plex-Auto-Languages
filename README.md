@@ -1,20 +1,14 @@
 # Plex Auto Languages
 
-[![GitHub Build](https://img.shields.io/github/actions/workflow/status/RemiRigal/Plex-Auto-Languages/dockerhub_build_push.yml?branch=master&style=flat-square)](https://github.com/RemiRigal/Plex-Auto-Languages/actions/workflows/dockerhub_build_push.yml)
-[![Docker Pulls](https://img.shields.io/docker/pulls/remirigal/plex-auto-languages?style=flat-square)](https://hub.docker.com/r/remirigal/plex-auto-languages)
-[![Version](https://img.shields.io/github/v/tag/RemiRigal/Plex-Auto-Languages?style=flat-square&label=version)](https://github.com/RemiRigal/Plex-Auto-Languages/tags)
-[![Codecov](https://img.shields.io/codecov/c/gh/RemiRigal/Plex-Auto-Languages/master?style=flat-square&logo=codecov)](https://app.codecov.io/gh/RemiRigal/Plex-Auto-Languages)
-[![License](https://img.shields.io/github/license/RemiRigal/Plex-Auto-Languages?style=flat-square)](https://github.com/RemiRigal/Plex-Auto-Languages/blob/master/LICENSE)
+This application lets you have a Netflix-like experience by auto-updating the language of your Plex TV Show episodes based on the current language you are using without messing with your existing language preferences.
 
-This application lets you have a Netflix-like experience by auto-updating the language of your Plex TV Show episodes based on the current language you are using without messing with your existing language preferences.  
-
-**You want to watch Squid Game in korean with english subtitles ?**  
+**You want to watch Squid Game in korean with english subtitles ?**
 Set the language for the first episode and don't think about it for the rest of the show. :heavy_check_mark:
 
-**You want to watch The Mandalorian in english but still want to watch Game of Thrones in french ?**  
+**You want to watch The Mandalorian in english but still want to watch Game of Thrones in french ?**
 Don't worry, the language is set per TV Show and it won't interfere. :heavy_check_mark:
 
-**You have multiple managed and shared users with various preferences ?**  
+**You have multiple managed and shared users with various preferences ?**
 The proper tracks will be selected automatically and independently for all your users. :heavy_check_mark:
 
 
@@ -22,7 +16,7 @@ The proper tracks will be selected automatically and independently for all your 
 
 The application requires a `Plex Token`, if you don't know how to find yours, please see the [official guide](https://support.plex.tv/articles/204059436-finding-an-authentication-token-x-plex-token/).
 
-The recommended way of running this application is by using Docker. A Docker image is available on [Docker Hub](https://hub.docker.com/r/remirigal/plex-auto-languages) and [installation instructions](#docker-installation) are detailed below.
+The recommended way of running this application is by using Docker. A Docker image is available on [Docker Hub](https://hub.docker.com/r/journeyover/plex-auto-languages) and [installation instructions](#docker-installation) are detailed below.
 
 PlexAutoLanguages can also be run natively with Python, see the [detailed instructions](#python-installation).
 
@@ -36,7 +30,7 @@ Here is a minimal example of a docker-compose configuration:
 version: "3"
 services:
   plexautolanguages:
-    image: remirigal/plex-auto-languages:latest
+    image: journeyover/plex-auto-languages:latest
     environment:
       - PLEX_URL=http://plex:32400
       - PLEX_TOKEN=MY_PLEX_TOKEN
@@ -52,7 +46,7 @@ Here is an example of a docker-compose configuration that uses a YAML configurat
 version: "3"
 services:
   plexautolanguages:
-    image: remirigal/plex-auto-languages:latest
+    image: journeyover/plex-auto-languages:latest
     container_name: PlexAutoLanguages
     environment:
       - TZ=Europe/Paris
@@ -69,7 +63,7 @@ This application requires Python 3 and has only been tested with Python 3.8 and 
 
 Start by cloning the repository:
 ```bash
-git clone git@github.com:RemiRigal/Plex-Auto-Languages.git
+git clone git@github.com:journeyextra/Plex-Auto-Languages.git
 ```
 
 Install the required dependencies:
@@ -177,6 +171,9 @@ plexautolanguages:
         events:
           - "scheduler"
       - "..."
+
+  # Path where the system and cache files are written, defaults to a standard OS specific path if left empty (recommended)
+  data_path: ""
 
   # Whether or not to enable the debug mode, defaults to 'false'
   # Enabling debug mode will significantly increase the number of output logs
