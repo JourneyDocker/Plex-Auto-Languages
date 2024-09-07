@@ -9,7 +9,7 @@ ENV LANG=C.UTF-8 \
     PYTHONDONTWRITEBYTECODE=1
 
 # Install dependencies and clean up in a single layer to reduce image size
-RUN apk --no-cache add curl tini
+RUN apk --no-cache add curl tini tzdata
 
 # Set up working directory and install Python dependencies
 WORKDIR /app
