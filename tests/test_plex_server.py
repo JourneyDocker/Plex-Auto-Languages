@@ -63,9 +63,9 @@ def test_get_selected_streams(plex, episode):
     episode.reload()
     part = episode.media[0].parts[0]
     audio_stream = part.audioStreams()[0]
-    part.setDefaultAudioStream(audio_stream)
+    part.setSelectedAudioStream(audio_stream)
     subtitle_stream = part.subtitleStreams()[0]
-    part.setDefaultSubtitleStream(subtitle_stream)
+    part.setSelectedSubtitleStream(subtitle_stream)
 
     episode.reload()
     part = episode.media[0].parts[0]
@@ -73,7 +73,7 @@ def test_get_selected_streams(plex, episode):
     assert audio.id == audio_stream.id
     assert subtitle.id == subtitle_stream.id
 
-    part.resetDefaultSubtitleStream()
+    part.resetSelectedSubtitleStream()
 
     episode.reload()
     part = episode.media[0].parts[0]
@@ -214,17 +214,17 @@ def test_process_new_or_updated_episode(plex, episode):
     first_episode.reload()
     part = first_episode.media[0].parts[0]
     french_audio = [audio for audio in part.audioStreams() if audio.languageCode == "fra"][0]
-    part.setDefaultAudioStream(french_audio)
+    part.setSelectedAudioStream(french_audio)
     french_sub = [sub for sub in part.subtitleStreams() if sub.languageCode == "fra"][0]
-    part.setDefaultSubtitleStream(french_sub)
+    part.setSelectedSubtitleStream(french_sub)
 
     last_episode = show.episodes()[-1]
     last_episode.reload()
     part = last_episode.media[0].parts[0]
     english_audio = [audio for audio in part.audioStreams() if audio.languageCode == "eng"][0]
-    part.setDefaultAudioStream(english_audio)
+    part.setSelectedAudioStream(english_audio)
     english_sub = [sub for sub in part.subtitleStreams() if sub.languageCode == "eng"][0]
-    part.setDefaultSubtitleStream(english_sub)
+    part.setSelectedSubtitleStream(english_sub)
 
     # The mocked function must be called once per user
     with patch.object(NewOrUpdatedTrackChanges, "change_track_for_user") as mocked_change_track:
@@ -247,18 +247,18 @@ def test_change_tracks(plex, episode):
 
     part = first_episode.media[0].parts[0]
     french_audio = [audio for audio in part.audioStreams() if audio.languageCode == "fra"][0]
-    part.setDefaultAudioStream(french_audio)
+    part.setSelectedAudioStream(french_audio)
     french_sub = [sub for sub in part.subtitleStreams() if sub.languageCode == "fra"][0]
-    part.setDefaultSubtitleStream(french_sub)
+    part.setSelectedSubtitleStream(french_sub)
 
     second_episode = show.episodes()[1]
     second_episode.reload()
 
     part = second_episode.media[0].parts[0]
     english_audio = [audio for audio in part.audioStreams() if audio.languageCode == "eng"][0]
-    part.setDefaultAudioStream(english_audio)
+    part.setSelectedAudioStream(english_audio)
     english_sub = [sub for sub in part.subtitleStreams() if sub.languageCode == "eng"][0]
-    part.setDefaultSubtitleStream(english_sub)
+    part.setSelectedSubtitleStream(english_sub)
 
     # The mocked function must be called once
     with patch.object(TrackChanges, "apply") as mocked_apply:

@@ -107,11 +107,11 @@ class TrackChanges():
             stream_type_name = "audio" if stream_type == AudioStream.STREAMTYPE else "subtitle"
             logger.debug(f"[Language Update] Updating {stream_type_name} stream of episode {episode} to {new_stream}")
             if stream_type == AudioStream.STREAMTYPE:
-                part.setDefaultAudioStream(new_stream)
+                part.setSelectedAudioStream(new_stream)
             elif stream_type == SubtitleStream.STREAMTYPE and new_stream is None:
-                part.resetDefaultSubtitleStream()
+                part.resetSelectedSubtitleStream()
             elif stream_type == SubtitleStream.STREAMTYPE:
-                part.setDefaultSubtitleStream(new_stream)
+                part.setSelectedSubtitleStream(new_stream)
 
     def _is_episode_after(self, episode: Episode):
         return self._reference.seasonNumber < episode.seasonNumber or \

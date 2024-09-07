@@ -78,16 +78,16 @@ def test_track_changes(plex, show):
     episode.reload()
     part = episode.media[0].parts[0]
     french_audio = [audio for audio in part.audioStreams() if audio.languageCode == "fra"][0]
-    part.setDefaultAudioStream(french_audio)
+    part.setSelectedAudioStream(french_audio)
     french_sub = [sub for sub in part.subtitleStreams() if sub.languageCode == "fra"][0]
-    part.setDefaultSubtitleStream(french_sub)
+    part.setSelectedSubtitleStream(french_sub)
 
     next_episode.reload()
     part = next_episode.media[0].parts[0]
     english_audio = [audio for audio in part.audioStreams() if audio.languageCode == "eng"][0]
-    part.setDefaultAudioStream(english_audio)
+    part.setSelectedAudioStream(english_audio)
     english_sub = [sub for sub in part.subtitleStreams() if sub.languageCode == "eng"][0]
-    part.setDefaultSubtitleStream(english_sub)
+    part.setSelectedSubtitleStream(english_sub)
 
     episode.reload()
     changes = TrackChanges(plex.username, episode, EventType.NEW_EPISODE)
