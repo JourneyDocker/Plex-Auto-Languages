@@ -48,7 +48,7 @@ class PlexAutoLanguages:
         Check if the application is ready. This is true if the PlexServer has been initialized.
         """
         if not self.plex:
-            logger.warning("Plex server is not initialized yet.")
+            #logger.warning("Plex server is not initialized yet.")
             return False
         return self.alive
 
@@ -130,4 +130,10 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     plex_auto_languages = PlexAutoLanguages(args.config_file)
+
+    # Add a delay before starting to prevent errors on the first startup after a PC restart.
+    # This may be a local issue, but it works for now.
+    logger.info("Waiting for 1 minute and 15 seconds to allow services to stabilize...")
+    sleep(75)
+
     plex_auto_languages.start()

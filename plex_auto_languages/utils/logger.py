@@ -1,8 +1,7 @@
 import logging
 
 
-class CustomFormatter():
-
+class CustomFormatter(logging.Formatter):
     grey = "\x1b[38;21m"
     blue = "\x1b[38;5;39m"
     yellow = "\x1b[38;5;226m"
@@ -20,17 +19,24 @@ class CustomFormatter():
     }
 
     def format(self, record):
-        log_fmt = self.FORMATS.get(record.levelno)
+        log_fmt = self.FORMATS.get(record.levelno, self.grey + self.fmt + self.reset)
         formatter = logging.Formatter(log_fmt)
         return formatter.format(record)
 
 
 def init_logger():
     logger = logging.getLogger("Logger")
-    logger.setLevel(logging.INFO)
-    logger_stream_handler = logging.StreamHandler()
-    logger_stream_handler.setFormatter(CustomFormatter())
-    logger.addHandler(logger_stream_handler)
+
+    # Avoid adding handlers multiple times
+    if not logger.hasHandlers():
+        logger.setLevel(logging.INFO)
+        logger_stream_handler = logging.StreamHandler()
+        logger_stream_handler.setFormatter(CustomFormatter())
+        logger.addHandler(logger_stream_handler)
+
+    # Prevent propagation to root logger to avoid duplicate logs
+    logger.propagate = False
+
     return logger
 
 

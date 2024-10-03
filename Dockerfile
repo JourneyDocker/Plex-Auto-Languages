@@ -26,7 +26,7 @@ VOLUME /config
 
 # Healthcheck: First check readiness, then check health
 # This way, Docker can detect when the service is ready to start receiving traffic and whether it remains healthy over time.
-HEALTHCHECK --interval=30s --timeout=10s --start-period=1m --retries=3 \
+HEALTHCHECK --interval=30s --timeout=10s --start-period=2m --retries=3 \
   CMD curl --silent --fail http://localhost:9880/ready || exit 1 && \
       curl --silent --fail http://localhost:9880/health || exit 1
 
