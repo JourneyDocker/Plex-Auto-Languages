@@ -7,7 +7,7 @@ from plex_auto_languages.plex_server import PlexServer
 from plex_auto_languages.utils.notifier import Notifier
 from plex_auto_languages.utils.logger import init_logger
 from plex_auto_languages.utils.scheduler import Scheduler
-from plex_auto_languages.utils.configuration import Configuration
+from plex_auto_languages.utils.configuration import Configuration, is_docker
 from plex_auto_languages.utils.healthcheck import HealthcheckServer
 
 
@@ -131,9 +131,13 @@ if __name__ == "__main__":
 
     plex_auto_languages = PlexAutoLanguages(args.config_file)
 
-    # Add a delay before starting to prevent errors on the first startup after a PC restart.
-    # This may be a local issue, but it works for now.
-    logger.info("Waiting for 1 minute and 15 seconds to allow services to stabilize...")
-    sleep(75)
+    # Check if running in Docker
+    if is_docker():
+        # Add a delay before starting in docker to prevent errors on the first startup after a PC restart.
+        # This may be a local issue, but it works for now.
+        logger.info("Waiting for 1 minute and 15 seconds to allow services to stabilize...")
+        sleep(75)
+    else:
+        logger.info("Not running in a Docker container, skipping the delay...")
 
     plex_auto_languages.start()

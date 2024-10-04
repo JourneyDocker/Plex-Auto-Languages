@@ -1,4 +1,23 @@
+# Byte-compiled Python files
 *.pyc
+
+# Development tool and environment configuration
 .vscode/
-*.tar
 .github/
+.codecov.yml
+.coveragerc
+
+# Version control and related files
+.git
+.gitignore
+
+# Build and packaging files
+Dockerfile
+*.tar
+
+# Documentation and license
+LICENSE
+README.md
+
+# Application-specific files and directories
+tests/
