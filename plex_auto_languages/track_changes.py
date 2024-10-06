@@ -86,7 +86,10 @@ class TrackChanges():
                 # todo: Don't default back to None, let user's Plex subtitle preferences take precedence. Use config in future
                 # if current_subtitle_stream is not None and matching_subtitle_stream is None:
                 #     self._changes.append((episode, part, SubtitleStream.STREAMTYPE, None))
-                if matching_subtitle_stream is not None and \
+                if self._subtitle_stream is None:
+                    if len(self._reference.subtitleStreams()) > 0:
+                        self._changes.append((episode, part, SubtitleStream.STREAMTYPE, None))
+                elif matching_subtitle_stream is not None and \
                         (current_subtitle_stream is None or matching_subtitle_stream.id != current_subtitle_stream.id):
                     if current_audio_stream.title is not None and "commentary" in current_audio_stream.title.lower() and matching_audio_stream is None:
                         # if the changed stream was commentary but this ep has none, then don't touch subs
