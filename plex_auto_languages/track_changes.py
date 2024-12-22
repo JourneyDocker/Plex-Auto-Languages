@@ -182,22 +182,32 @@ class TrackChanges():
             if self._audio_stream is None:
                 return None
             match_forced_only = True
+            match_hearing_impaired_only = False  # Ensure it's initialized
             language_code = self._audio_stream.languageCode
         else:
             match_forced_only = self._subtitle_stream.forced
+            match_hearing_impaired_only = self._subtitle_stream.hearingImpaired  # Check if subtitles are SDH
             language_code = self._subtitle_stream.languageCode
-        # We only want stream with the same language code
+
+        # We only want streams with the same language code
         streams = [s for s in subtitle_streams if s.languageCode == language_code]
+        if len(streams) == 1:
+            return streams[0]  # Early return if only one match
+
         if match_forced_only:
             streams = [s for s in streams if s.forced]
-        if len(streams) == 0:
+        if match_hearing_impaired_only:  # Filter for SDH if required
+            streams = [s for s in streams if s.hearingImpaired]
+
+        if not streams:
             return None
-        if len(streams) == 1 or match_forced_only:
-            return streams[0]
-        # If multiple streams match, order them based on a score
+
+        # Score the remaining streams based on attributes
         scores = [0] * len(streams)
         for index, stream in enumerate(streams):
             if self._subtitle_stream.forced == stream.forced:
+                scores[index] += 3
+            if self._subtitle_stream.hearingImpaired == stream.hearingImpaired:  # Add score for SDH subtitles
                 scores[index] += 3
             if self._subtitle_stream.codec is not None and stream.codec is not None and \
                     self._subtitle_stream.codec == stream.codec:
@@ -216,7 +226,9 @@ class TrackChanges():
             #     logger.debug(f"[Special] Matched subtitle IDs "
             #              f"current {self._subtitle_stream.title} stream '{stream.title:}'")
             #     scores[index] += 1
-        logger.debug(f"{scores}\n{streams}")
+
+        # Logging for debugging
+        logger.debug(f"Scores: {scores}, Streams: {streams}")
         return streams[scores.index(max(scores))]
 
     @staticmethod

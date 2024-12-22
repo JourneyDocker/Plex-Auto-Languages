@@ -1,74 +1,18 @@
 name: Docker Publish Main
 
 on:
+  workflow_dispatch:
   push:
     branches:
-    - main
-
-env:
-  PLATFORMS: linux/amd64,linux/arm64,linux/arm
-  TAG: main
+      - main
 
 permissions:
   packages: write
 
 jobs:
-  main:
-    environment: release-docker
-    runs-on: ubuntu-latest
-
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@main
-      with:
-        show-progress: false
-        submodules: recursive
-
-    - name: Set up Docker Buildx
-      uses: docker/setup-buildx-action@master
-
-    - name: Login to ghcr.io
-      uses: docker/login-action@master
-      with:
-        registry: ghcr.io
-        username: ${{ github.actor }}
-        password: ${{ secrets.GITHUB_TOKEN }}
-
-    - name: Login to DockerHub
-      uses: docker/login-action@master
-      with:
-        username: ${{ secrets.DOCKERHUB_USERNAME }}
-        password: ${{ secrets.DOCKERHUB_TOKEN }}
-
-    - name: Prepare environment outputs
-      shell: sh
-      run: |
-        set -eu
-
-        echo "DATE_ISO8601=$(date --iso-8601=seconds --utc)" >> "$GITHUB_ENV"
-        echo "GHCR_REPOSITORY=$(echo ${{ github.repository }} | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_ENV"
-        echo "DH_REPOSITORY=$(echo ${{ secrets.DOCKERHUB_USERNAME }}/${{ github.event.repository.name }} | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_ENV"
-
-    - name: Build and publish Docker image from Dockerfile
-      uses: docker/build-push-action@master
-      with:
-        context: .
-        platforms: ${{ env.PLATFORMS }}
-        provenance: true
-        sbom: true
-        labels: |
-          org.opencontainers.image.created=${{ env.DATE_ISO8601 }}
-          org.opencontainers.image.version=${{ github.sha }}
-          org.opencontainers.image.revision=${{ github.sha }}
-        tags: |
-          ghcr.io/${{ env.GHCR_REPOSITORY }}:${{ env.TAG }}
-          ${{ env.DH_REPOSITORY }}:${{ env.TAG }}
-        push: true
-
-    - name: Update DockerHub repository description
-      uses: peter-evans/dockerhub-description@main
-      with:
-        username: ${{ secrets.DOCKERHUB_USERNAME }}
-        password: ${{ secrets.DOCKERHUB_TOKEN }}
-        repository: ${{ env.DH_REPOSITORY }}
-        short-description: ${{ github.event.repository.description }}
+  call-reusable-workflow:
+    uses: JourneyDocker/github-workflows/.github/workflows/docker-publish.yml@main
+    with:
+      tag: main
+      platforms: linux/amd64,linux/arm64,linux/arm
+    secrets: inherit
