@@ -11,7 +11,7 @@ from plex_auto_languages.utils.configuration import Configuration
 from plex_auto_languages.utils.healthcheck import HealthcheckServer
 
 # Version information
-__version__ = "1.3.0-dev1"
+__version__ = "1.3.0"
 
 class PlexAutoLanguages:
     """
@@ -178,7 +178,7 @@ if __name__ == "__main__":
     logger = init_logger()
 
     # Log the version information.
-    logger.info(f"Starting Plex Auto Languages, version {__version__}")
+    logger.info(f"Starting Plex Auto Languages - Version {__version__}")
 
     # Parse command-line arguments.
     parser = argparse.ArgumentParser()
