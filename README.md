@@ -40,8 +40,6 @@ The Docker image is available in three tag formats:
 - **`A.B.C.D` (Versioned Releases)**: Specific version tags for consistency and reliability.
   - *Recommended for*: Environments requiring version control.
 
-> **Note**: At the moment, versioned tags are unavailable. Only `main` and `latest` is supported.
-
 #### Installation Options
 
 The Docker image can be pulled from either of the following registries:
