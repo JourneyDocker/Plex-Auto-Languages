@@ -1,0 +1,89 @@
+plexautolanguages:
+  # Update language for the entire show or only for the current season
+  # Accepted values:
+  #   - show (default)
+  #   - season
+  update_level: "show"
+
+  # Update all episodes of the show/season or only the next ones
+  # Accepted values:
+  #   - all (default)
+  #   - next
+  update_strategy: "next"
+
+  # Whether or not playing a file should trigger a language update, defaults to 'true'
+  trigger_on_play: true
+
+  # Whether or not scanning the library for new files should trigger a language update, defaults to 'true'
+  # A newly added episode will be updated based on the most recently watched episode, or the first episode of the show if it has never been watched
+  trigger_on_scan: true
+
+  # Whether or not navigating the Plex library should trigger a language update, defaults to 'false'
+  # Only the Plex web client and the Plex for Windows app support this feature
+  # Set this to 'true' only if you want to perform changes whenever the default track of an episode is updated, even when the episode is not played.
+  # Setting this parameter to 'true' can result in higher resource usage.
+  trigger_on_activity: false
+
+  # Whether or not to refresh the cached library whenever the Plex server scans its own library, defaults to 'true'
+  # Disabling this parameter will prevent PlexAutoLanguages from detecting updated files for an already existing episode
+  # It is recommended to disable this parameter if you have a large TV Show library (10k+ episodes)
+  refresh_library_on_scan: true
+
+  # PlexAutoLanguages will ignore shows with any of the following Plex labels
+  ignore_labels:
+    - PAL_IGNORE
+
+  # Plex configuration
+  plex:
+    # A valid Plex URL (required)
+    url: ""
+    # A valid Plex Token (required)
+    token: ""
+
+  scheduler:
+    # Whether of not to enable the scheduler, defaults to 'true'
+    # The scheduler will perform a deeper analysis of all recently played TV Shows
+    enable: true
+    # The time at which the scheduler start its task with the format 'HH:MM', defaults to '02:00'
+    schedule_time: "02:00"
+
+  notifications:
+    # Whether or not to enable the notifications through Apprise, defaults to 'false'
+    # A notification is sent whenever a language change is performed
+    enable: false
+    # An array of Apprise configurations, see Apprise docs for more information: https://github.com/caronc/apprise
+    # The array 'users' can be specified in order to link notification URLs with specific users
+    #   Defaults to all users if not present
+    # The array 'events' can be specified in order to get notifications only for specific events
+    #   Valid event values: "play_or_activity" "new_episode" "updated_episode" "scheduler"
+    #   Defaults to all events if not present
+    apprise_configs:
+      # This URL will be notified of all changes during all events
+      - "discord://webhook_id/webhook_token"
+      # These URLs will only be notified of language change for users "MyUser1" and "MyUser2"
+      - urls:
+          - "gotify://hostname/token"
+          - "pover://user@token"
+        users:
+          - "MyUser1"
+          - "MyUser2"
+      # This URL will only be notified of language change for user "MyUser3" during play or activity events
+      - urls:
+          - "tgram://bottoken/ChatID"
+        users:
+          - "MyUser3"
+        events:
+          - "play_or_activity"
+      # This URL will be notified of language change during scheduler tasks only
+      - urls:
+          - "gotify://hostname/token"
+        events:
+          - "scheduler"
+      - "..."
+
+  # Path where the system and cache files are written, defaults to a standard OS specific path if left empty (recommended)
+  data_path: ""
+
+  # Whether or not to enable the debug mode, defaults to 'false'
+  # Enabling debug mode will significantly increase the number of output logs
+  debug: false

@@ -92,7 +92,7 @@ docker run -d \
    python3 -m pip install -r requirements.txt
    ```
 3. **Create Configuration File**:
-   Use the template in the [default configuration file](https://github.com/JourneyDocker/Plex-Auto-Languages/blob/main/config/default.yaml) to create your own `config.yaml`. Only `plex.url` and `plex.token` are required.
+   Use the template in the [default configuration file](https://github.com/JourneyDocker/Plex-Auto-Languages/blob/main/config.example.yaml) to create your own `config.yaml`. Only `plex.url` and `plex.token` are required.
 
 4. **Run the Application**:
    ```bash
