@@ -21,3 +21,4 @@ README.md
 
 # Application-specific files and directories
 tests/
+config.example.yaml

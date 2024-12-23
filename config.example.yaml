@@ -7,8 +7,8 @@ plexautolanguages:
 
   # Update all episodes of the show/season or only the next ones
   # Accepted values:
-  #   - all (default)
-  #   - next
+  #   - all
+  #   - next (default)
   update_strategy: "next"
 
   # Whether or not playing a file should trigger a language update, defaults to 'true'

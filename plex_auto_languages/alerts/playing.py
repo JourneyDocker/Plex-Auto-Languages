@@ -78,7 +78,7 @@ class PlexPlaying(PlexAlert):
         )
         if item.key in plex.cache.default_streams and plex.cache.default_streams[item.key] == pair_id:
             return
-        plex.cache.default_streams.setdefault(item.key, pair_id)
+        plex.cache.default_streams[item.key] = pair_id
 
         # Change tracks if needed
         plex.change_tracks(username, item, EventType.PLAY_OR_ACTIVITY)
