@@ -7,54 +7,80 @@ from plex_auto_languages.plex_server import PlexServer
 from plex_auto_languages.utils.notifier import Notifier
 from plex_auto_languages.utils.logger import init_logger
 from plex_auto_languages.utils.scheduler import Scheduler
-from plex_auto_languages.utils.configuration import Configuration, is_docker
+from plex_auto_languages.utils.configuration import Configuration
 from plex_auto_languages.utils.healthcheck import HealthcheckServer
 
+# Version information
+__version__ = "1.3.0-dev1"
 
 class PlexAutoLanguages:
-    def __init__(self, user_config_path: str):
-        self.alive = False
-        self.must_stop = False
-        self.stop_signal = False
-        self.plex_alert_listener = None
+    """
+    The main class that orchestrates the functionality of Plex Auto Languages.
+    Handles configuration, health checks, notifications, scheduling, and interactions with the Plex server.
+    """
 
-        # Configuration
+    def __init__(self, user_config_path: str):
+        """
+        Initialize the application with user configuration.
+
+        :param user_config_path: Path to the user configuration file.
+        """
+        self.alive = False  # Indicates whether the application is active and running.
+        self.must_stop = False  # Flags if the application should stop the current iteration.
+        self.stop_signal = False  # Flags if a stop signal (e.g., SIGINT) was received.
+        self.plex_alert_listener = None  # Listener for Plex server alerts.
+
+        # Load the configuration file.
         self.config = Configuration(user_config_path)
 
-        # Health-check server
+        # Initialize the health-check server.
         self.healthcheck_server = HealthcheckServer("Plex-Auto-Languages", self.is_ready, self.is_healthy)
         self.healthcheck_server.start()
 
-        # Notifications
+        # Initialize the notifier for sending alerts, if enabled.
         self.notifier = None
         if self.config.get("notifications.enable"):
             self.notifier = Notifier(self.config.get("notifications.apprise_configs"))
 
-        # Scheduler
+        # Initialize the scheduler for periodic tasks, if enabled.
         self.scheduler = None
         if self.config.get("scheduler.enable"):
             self.scheduler = Scheduler(self.config.get("scheduler.schedule_time"), self.scheduler_callback)
 
-        # Plex
+        # Placeholder for Plex server interactions.
         self.plex = None
 
+        # Set up signal handlers for graceful termination.
         self.set_signal_handlers()
 
     def init(self):
-        self.plex = PlexServer(self.config.get("plex.url"), self.config.get("plex.token"), self.notifier, self.config)
+        """
+        Initialize the connection to the Plex server using the configured URL and token.
+        """
+        self.plex = PlexServer(
+            self.config.get("plex.url"),
+            self.config.get("plex.token"),
+            self.notifier,
+            self.config
+        )
 
     def is_ready(self):
         """
-        Check if the application is ready. This is true if the PlexServer has been initialized.
+        Check if the application is ready to handle requests.
+        The application is considered ready if the Plex server has been initialized.
+
+        :return: True if the application is ready, False otherwise.
         """
         if not self.plex:
-            #logger.warning("Plex server is not initialized yet.")
+            logger.warning("Plex server is not initialized yet.")
             return False
         return self.alive
 
     def is_healthy(self):
         """
-        Check if the application is healthy. This includes checking if the Plex server is alive.
+        Check the health of the application. This includes verifying the status of the Plex server.
+
+        :return: True if the application and Plex server are healthy, False otherwise.
         """
         if not self.alive:
             logger.warning("Application is not alive.")
@@ -65,15 +91,24 @@ class PlexAutoLanguages:
         return True
 
     def set_signal_handlers(self):
+        """
+        Set up handlers for SIGINT and SIGTERM signals to allow graceful shutdown.
+        """
         signal.signal(signal.SIGINT, self.stop)
         signal.signal(signal.SIGTERM, self.stop)
 
     def stop(self, *_):
+        """
+        Handle termination signals (SIGINT or SIGTERM) by flagging the application to stop gracefully.
+        """
         logger.info("Received SIGINT or SIGTERM, stopping gracefully")
         self.must_stop = True
         self.stop_signal = True
 
     def start(self):
+        """
+        Start the main loop of the application, managing the Plex server connection and tasks.
+        """
         if self.scheduler:
             self.scheduler.start()
 
@@ -82,18 +117,24 @@ class PlexAutoLanguages:
             self.init()
             if self.plex is None:
                 break
+
+            # Start listening for alerts from the Plex server.
             self.plex.start_alert_listener(self.alert_listener_error_callback)
             self.alive = True
-            count = 0
+
+            count = 0  # Counter for periodic health checks.
             while not self.must_stop:
                 sleep(1)
                 count += 1
                 if count % 60 == 0 and not self.plex.is_alive:
                     logger.warning("Lost connection to the Plex server")
                     self.must_stop = True
+
+            # Clean up when stopping.
             self.alive = False
             self.plex.save_cache()
             self.plex.stop()
+
             if not self.stop_signal:
                 sleep(1)
                 logger.info("Trying to restore the connection to the Plex server...")
@@ -102,9 +143,15 @@ class PlexAutoLanguages:
             self.scheduler.shutdown()
             self.scheduler.join()
 
+        # Shut down the health-check server.
         self.healthcheck_server.shutdown()
 
     def alert_listener_error_callback(self, error: Exception):
+        """
+        Handle errors that occur in the Plex server alert listener.
+
+        :param error: The exception that occurred.
+        """
         if isinstance(error, WebSocketConnectionClosedException):
             logger.warning("The Plex server closed the websocket connection")
         elif isinstance(error, UnicodeDecodeError):
@@ -116,6 +163,10 @@ class PlexAutoLanguages:
         self.must_stop = True
 
     def scheduler_callback(self):
+        """
+        Callback function for scheduled tasks.
+        Performs a deep analysis if the Plex server is alive.
+        """
         if self.plex is None or not self.plex.is_alive:
             return
         logger.info("Starting scheduler task")
@@ -123,21 +174,19 @@ class PlexAutoLanguages:
 
 
 if __name__ == "__main__":
+    # Initialize the logger.
     logger = init_logger()
 
+    # Log the version information.
+    logger.info(f"Starting Plex Auto Languages, version {__version__}")
+
+    # Parse command-line arguments.
     parser = argparse.ArgumentParser()
     parser.add_argument("-c", "--config_file", type=str, help="Config file path")
     args = parser.parse_args()
 
+    # Create the main application instance.
     plex_auto_languages = PlexAutoLanguages(args.config_file)
 
-    # Check if running in Docker
-    if is_docker():
-        # Add a delay before starting in docker to prevent errors on the first startup after a PC restart.
-        # This may be a local issue, but it works for now.
-        logger.info("Waiting for 1 minute and 15 seconds to allow services to stabilize...")
-        sleep(75)
-    else:
-        logger.info("Not running in a Docker container, skipping the delay...")
-
+    # Start the application.
     plex_auto_languages.start()
