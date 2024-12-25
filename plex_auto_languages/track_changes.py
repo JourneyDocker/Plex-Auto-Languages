@@ -182,25 +182,25 @@ class TrackChanges():
             if self._audio_stream is None:
                 return None
             match_forced_only = True
-            match_hearing_impaired_only = False  # Ensure it's initialized
+            match_hearing_impaired_only = False
             language_code = self._audio_stream.languageCode
         else:
             match_forced_only = self._subtitle_stream.forced
-            match_hearing_impaired_only = self._subtitle_stream.hearingImpaired  # Check if subtitles are SDH
+            match_hearing_impaired_only = self._subtitle_stream.hearingImpaired
             language_code = self._subtitle_stream.languageCode
 
         # We only want streams with the same language code
         streams = [s for s in subtitle_streams if s.languageCode == language_code]
-        if len(streams) == 1:
-            return streams[0]  # Early return if only one match
-
         if match_forced_only:
             streams = [s for s in streams if s.forced]
-        if match_hearing_impaired_only:  # Filter for SDH if required
+        if match_hearing_impaired_only:
             streams = [s for s in streams if s.hearingImpaired]
 
-        if not streams:
+        if len(streams) == 0:
             return None
+
+        if len(streams) == 1:
+            return streams[0]
 
         # Score the remaining streams based on attributes
         scores = [0] * len(streams)
