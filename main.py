@@ -11,7 +11,7 @@ from plex_auto_languages.utils.configuration import Configuration
 from plex_auto_languages.utils.healthcheck import HealthcheckServer
 
 # Version information
-__version__ = "1.3.1"
+__version__ = "1.3.2-dev1"
 
 class PlexAutoLanguages:
     """
@@ -181,8 +181,8 @@ if __name__ == "__main__":
     logger.info(f"Starting Plex Auto Languages - Version {__version__}")
 
     # Parse command-line arguments.
-    parser = argparse.ArgumentParser()
-    parser.add_argument("-c", "--config_file", type=str, help="Config file path")
+    parser = argparse.ArgumentParser(description="Plex Auto Languages")
+    parser.add_argument("-c", "--config_file", type=str, help="Path to the configuration file")
     args = parser.parse_args()
 
     # Create the main application instance.

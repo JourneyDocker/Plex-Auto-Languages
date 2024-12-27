@@ -6,6 +6,7 @@
 .github/
 .codecov.yml
 .coveragerc
+renovate.json
 
 # Version control and related files
 .git

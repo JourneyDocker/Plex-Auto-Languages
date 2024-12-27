@@ -1,0 +1,32 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "automerge": false,
+  "automergeStrategy": "squash",
+  "automergeType": "pr",
+  "configMigration": true,
+  "dependencyDashboard": true,
+  "dependencyDashboardAutoclose": false,
+  "dependencyDashboardLabels": [
+    "dependencies",
+    "tracker"
+  ],
+  "enabled": true,
+  "enabledManagers": [
+    "dockerfile",
+    "pip_requirements"
+  ],
+  "extends": [
+    "config:recommended",
+    ":rebaseStalePrs"
+  ],
+  "groupName": "all",
+  "includeForks": true,
+  "labels": [
+    "dependencies"
+  ],
+  "rebaseWhen": "conflicted",
+  "suppressNotifications": [
+    "prIgnoreNotification"
+  ],
+  "timezone": "US/Central"
+}
