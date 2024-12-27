@@ -20,7 +20,7 @@
     ":rebaseStalePrs"
   ],
   "groupName": "all",
-  "includeForks": true,
+  "forkProcessing": "enabled",
   "labels": [
     "dependencies"
   ],
