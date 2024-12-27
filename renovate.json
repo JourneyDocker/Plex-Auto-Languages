@@ -16,14 +16,16 @@
     "pip_requirements"
   ],
   "extends": [
+    ":rebaseStalePrs",
     "config:recommended",
-    ":rebaseStalePrs"
+    "group:allNonMajor",
+    "schedule:earlyMondays"
   ],
-  "groupName": "all",
   "forkProcessing": "enabled",
   "labels": [
     "dependencies"
   ],
+  "rangeStrategy": "bump",
   "rebaseWhen": "conflicted",
   "suppressNotifications": [
     "prIgnoreNotification"
