@@ -11,10 +11,6 @@
     "tracker"
   ],
   "enabled": true,
-  "enabledManagers": [
-    "dockerfile",
-    "pip_requirements"
-  ],
   "extends": [
     ":rebaseStalePrs",
     "config:recommended",
