@@ -51,8 +51,6 @@ The Docker image can be pulled from either of the following registries:
 Here’s an example of a minimal `docker-compose.yml` setup:
 
 ```yaml
-docker-compose:
-version: "3"
 services:
   plexautolanguages:
     image: journeyover/plex-auto-languages:main

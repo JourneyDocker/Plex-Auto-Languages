@@ -23,8 +23,5 @@
   ],
   "rangeStrategy": "bump",
   "rebaseWhen": "conflicted",
-  "suppressNotifications": [
-    "prIgnoreNotification"
-  ],
   "timezone": "US/Central"
 }
