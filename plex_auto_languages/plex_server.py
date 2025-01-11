@@ -30,15 +30,39 @@ class UnprivilegedPlexServer():
         self._session = session
         self._plex_url = url
         self._plex = self._get_server(url, token, self._session)
+        self._last_connection_check = None
+        self._connection_check_interval = timedelta(minutes=5)  # Cache connection status for 5 minutes
 
     @property
     def connected(self):
         if self._plex is None:
+            logger.debug("No Plex instance available (self._plex is None)")
             return False
+        if self._last_connection_check is not None:
+            elapsed_time = datetime.now() - self._last_connection_check
+            logger.debug(f"Time since last connection check: {elapsed_time}")
+            if elapsed_time < self._connection_check_interval:
+                remaining_time = self._connection_check_interval - elapsed_time
+                logger.debug(f"Using cached result. Remaining time for next check: {remaining_time}")
+                return self._plex is not None
         try:
-            _ = self._plex.library.sections()
-            return True
-        except (BadRequest, RequestsConnectionError):
+            logger.debug("Attempting to fetch library sections from Plex")
+            sections = self._plex.library.sections()
+            if sections:
+                logger.debug(f"Sections retrieved: {len(sections)} found. Verifying first section.")
+                _ = sections[0]
+                self._last_connection_check = datetime.now()
+                logger.debug("Connection verified successfully")
+                return True
+            logger.debug("No sections found in the Plex library")
+            return False
+        except (BadRequest, RequestsConnectionError, IndexError) as e:
+            logger.debug(f"Connection check failed with known exception: {type(e).__name__}: {str(e)}")
+            self._last_connection_check = datetime.now()
+            return False
+        except Exception as e:
+            logger.warning(f"Unexpected error during connection check: {type(e).__name__}: {str(e)}")
+            self._last_connection_check = datetime.now()
             return False
 
     @property
