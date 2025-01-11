@@ -36,9 +36,9 @@ class UnprivilegedPlexServer():
         if self._plex is None:
             return False
         try:
-            _ = self._plex.library.search(libtype="episode", maxresults=1)
+            _ = self._plex.library.sections()
             return True
-        except (BadRequest, RequestsConnectionError, NotFound):
+        except (BadRequest, RequestsConnectionError):
             return False
 
     @property
