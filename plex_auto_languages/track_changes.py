@@ -140,41 +140,61 @@ class TrackChanges():
         )
 
     def _match_audio_stream(self, audio_streams: List[AudioStream]):
-        # The reference stream can be 'None'
-        if self._audio_stream is None:
-            return None
-        # We only want stream with the same language code
-        streams = [s for s in audio_streams if s.languageCode == self._audio_stream.languageCode]
-        # if streams aren't differentiated, set ambiguous flag
-        ambiguous = all(s.title == audio_streams[0].title for s in audio_streams)
-        # attempt to filter commentary tracks
-        if self._audio_stream.title is not None and "commentary" in self._audio_stream.title.lower():
-            streams = [s for s in streams if s.title is not None and "commentary" in s.title.lower()]
-        else:
-            streams = [s for s in streams if s.title is not None and "commentary" not in s.title.lower()]
-        if len(streams) == 0:
-            return None
-        if len(streams) == 1:
-            return streams[0]
-        # If multiple streams match, order them based on a score
-        scores = [0] * len(streams)
-        for index, stream in enumerate(streams):
-            if self._audio_stream.codec == stream.codec:
-                scores[index] += 5
-            if self._audio_stream.audioChannelLayout == stream.audioChannelLayout:
-                scores[index] += 3
-            if ambiguous:
-                if self._audio_stream.channels < 3:
-                    if self._audio_stream.channels < stream.channels:
-                        # if streams are ambiguous, prefer more channels as a safe choice to avoid commentary (likely 2.0)
-                        # or we could default to first match...
-                        scores[index] += 8
-                else:
-                    if self._audio_stream.channels <= stream.channels:
-                        scores[index] += 1
-            if self._audio_stream.title is not None and stream.title is not None and self._audio_stream.title == stream.title:
-                scores[index] += 5
-        return streams[scores.index(max(scores))]
+            # The reference stream can be 'None'
+            if self._audio_stream is None:
+                return None
+            # We only want streams with the same language code
+            streams = [s for s in audio_streams if s.languageCode == self._audio_stream.languageCode]
+            # if streams aren't differentiated, set ambiguous flag
+            ambiguous = all(s.title == audio_streams[0].title for s in audio_streams)
+            def get_stream_title(stream):
+                """Helper function to get the most specific title available"""
+                return (stream.extendedDisplayTitle or
+                       stream.displayTitle or
+                       stream.title or "").lower()
+            def contains_descriptive_terms(title):
+                """Check if the title contains terms indicating a descriptive track"""
+                descriptive_terms = [
+                    "commentary", "description", "descriptive",
+                    "narration", "narrative", "described"
+                ]
+                return any(term in title for term in descriptive_terms)
+            # Get reference stream title
+            ref_title = get_stream_title(self._audio_stream)
+            # Filter streams based on descriptive terms
+            if contains_descriptive_terms(ref_title):
+                # Keep only descriptive tracks if reference is descriptive
+                streams = [s for s in streams if contains_descriptive_terms(get_stream_title(s))]
+            else:
+                # Filter out descriptive tracks if reference is not descriptive
+                streams = [s for s in streams if not contains_descriptive_terms(get_stream_title(s))]
+            if len(streams) == 0:
+                return None
+            if len(streams) == 1:
+                return streams[0]
+            # If multiple streams match, order them based on a score
+            scores = [0] * len(streams)
+            for index, stream in enumerate(streams):
+                current_title = get_stream_title(stream)
+                # Codec match
+                if self._audio_stream.codec == stream.codec:
+                    scores[index] += 5
+                # Channel layout match
+                if self._audio_stream.audioChannelLayout == stream.audioChannelLayout:
+                    scores[index] += 3
+                # Handle ambiguous streams
+                if ambiguous:
+                    if self._audio_stream.channels < 3:
+                        if self._audio_stream.channels < stream.channels:
+                            # Prefer more channels as a safe choice to avoid descriptive tracks (likely 2.0)
+                            scores[index] += 8
+                    else:
+                        if self._audio_stream.channels <= stream.channels:
+                            scores[index] += 1
+                # Title matching across all title fields
+                if ref_title == current_title:
+                    scores[index] += 5
+            return streams[scores.index(max(scores))]
 
     def _match_subtitle_stream(self, subtitle_streams: List[SubtitleStream]):
         # If no subtitle is selected, the reference stream can be 'None'
