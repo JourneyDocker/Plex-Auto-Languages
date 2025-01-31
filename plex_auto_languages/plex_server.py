@@ -129,27 +129,34 @@ class PlexServer(UnprivilegedPlexServer):
         return self.connected and self._alert_listener is not None and self._alert_listener.is_alive()
 
     @staticmethod
-    def _get_server(url: str, token: str, session: requests.Session, max_tries: int = 10):
-        for _ in range(max_tries):
+    def _get_server(url: str, token: str, session: requests.Session, max_tries: int = 100, retry_delay: int = 5):
+        """Attempts to establish a connection to the Plex server, retrying on failure."""
+        for attempt in range(1, max_tries + 1):
             try:
                 return BasePlexServer(url, token, session=session)
             except Unauthorized as e:
-                logger.warning("Unauthorized: make sure your credentials are correct. Retrying to connect to Plex server...")
-                logger.debug(e, exc_info=True)
+                logger.warning("Unauthorized: Check your credentials. Retrying... (Attempt %d/%d)", attempt, max_tries)
             except (RequestsConnectionError, BadRequest) as e:
-                logger.warning("ConnectionError: Unable to connect to Plex server, retrying...")
-                logger.debug(e, exc_info=True)
+                logger.warning("ConnectionError: Unable to connect to Plex server. Retrying... (Attempt %d/%d)", attempt, max_tries)
             except Exception as e:
-                logger.error("Unexpected error during connection to Plex")
-                logger.error(e, exc_info=True)
-            time.sleep(5)
+                logger.error("Unexpected error during connection to Plex: %s", str(e), exc_info=True)
+            time.sleep(retry_delay)
+
+        logger.error("Failed to connect to Plex server after %d attempts.", max_tries)
         return None
 
     def _get_logged_user(self):
-        plex_username = self._plex.myPlexAccount().username
-        for account in self._plex.systemAccounts():
-            if account.name == plex_username:
-                return account
+        """Retrieves the currently logged-in Plex system account."""
+        if self._plex is None:
+            return None
+        try:
+            plex_username = self._plex.myPlexAccount().username
+            for account in self._plex.systemAccounts():
+                if account.name == plex_username:
+                    return account
+        except Exception as e:
+            logger.error(f"Error getting logged user: {str(e)}")
+            return None
         return None
 
     def save_cache(self):
