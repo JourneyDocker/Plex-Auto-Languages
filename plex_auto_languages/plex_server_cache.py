@@ -12,9 +12,7 @@ from plex_auto_languages.utils.json_encoders import DateTimeEncoder
 if TYPE_CHECKING:
     from plex_auto_languages.plex_server import PlexServer
 
-
 logger = get_logger()
-
 
 class PlexServerCache():
 
@@ -37,12 +35,15 @@ class PlexServerCache():
         self._instance_users_valid_until = datetime.fromtimestamp(0)
         # Library cache
         self.episode_parts = {}
-        # Initialization
+
+        # Initialization: Try loading the cache from file.
         if not self._load():
-            logger.info("Scanning all episodes from the Plex library, this action should only take a few seconds "
-                        "but can take several minutes for larger libraries")
+            # Create the cache file with the default empty state.
+            self.save()
+            logger.debug("[Cache] Cache file created with initial empty data.")
+            logger.info("[Cache] Scanning all episodes from the Plex library. This action should only take a few seconds but can take several minutes for larger libraries")
             self.refresh_library_cache()
-            logger.info(f"Scanned {len(self.episode_parts)} episodes from the library")
+            logger.info(f"[Cache] Scanned {len(self.episode_parts)} episodes from the library")
 
     def should_process_recently_added(self, episode_id: str, added_at: datetime):
         if episode_id in self.newly_added and self.newly_added[episode_id] == added_at:
@@ -102,22 +103,34 @@ class PlexServerCache():
     def _get_cache_file_path(self):
         data_dir = self._plex.config.get("data_dir")
         cache_dir = os.path.join(data_dir, "cache")
+        cache_file = os.path.join(cache_dir, self._plex.unique_id)
         if not os.path.exists(cache_dir):
-            os.makedirs(cache_dir)
-        return os.path.join(cache_dir, self._plex.unique_id)
+            try:
+                os.makedirs(cache_dir)
+                logger.debug(f"[Cache] Created cache directory at {cache_dir}")
+            except Exception as e:
+                logger.error(f"[Cache] Failed to create cache directory at {cache_dir}: {e}")
+                raise
+        return cache_file
 
     def _load(self):
+        logger.debug(f"[Cache] Attempting to load cache file from {self._cache_file_path}")
         if not os.path.exists(self._cache_file_path) or not os.path.isfile(self._cache_file_path):
+            logger.info("[Cache] Cache file not found. Creating a new cache file before scanning the library.")
             return False
-        logger.debug("[Cache] Loading server cache from file")
         try:
             with open(self._cache_file_path, "r", encoding="utf-8") as stream:
                 cache = json.load(stream)
+            logger.debug("[Cache] Cache file loaded successfully")
         except json.JSONDecodeError:
-            logger.warning("[Cache] The cache is corrupted, clearing the cache before trying again")
-            if os.path.exists(self._cache_file_path) and os.path.isfile(self._cache_file_path):
+            logger.warning("[Cache] The cache file is corrupted, clearing the cache before trying again")
+            try:
                 os.remove(self._cache_file_path)
+                logger.debug(f"[Cache] Removed corrupted cache file at {self._cache_file_path}")
+            except Exception as e:
+                logger.error(f"[Cache] Failed to remove corrupted cache file at {self._cache_file_path}: {e}")
             return False
+
         self.newly_updated = cache.get("newly_updated", self.newly_updated)
         self.newly_updated = {key: isoparse(value) for key, value in self.newly_updated.items()}
         self.newly_added = cache.get("newly_added", self.newly_added)
@@ -127,12 +140,16 @@ class PlexServerCache():
         return True
 
     def save(self):
-        logger.debug("[Cache] Saving server cache to file")
+        logger.debug(f"[Cache] Saving server cache to file at {self._cache_file_path}")
         cache = {
             "newly_updated": self.newly_updated,
             "newly_added": self.newly_added,
             "episode_parts": self.episode_parts,
             "last_refresh": self._last_refresh
         }
-        with open(self._cache_file_path, "w", encoding="utf-8") as stream:
-            stream.write(self._encoder.encode(cache))
+        try:
+            with open(self._cache_file_path, "w", encoding="utf-8") as stream:
+                stream.write(self._encoder.encode(cache))
+            logger.debug("[Cache] Server cache successfully saved")
+        except Exception as e:
+            logger.error(f"[Cache] Failed to save server cache at {self._cache_file_path}: {e}")
