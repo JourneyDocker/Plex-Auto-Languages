@@ -129,20 +129,20 @@ class PlexServer(UnprivilegedPlexServer):
         return self.connected and self._alert_listener is not None and self._alert_listener.is_alive()
 
     @staticmethod
-    def _get_server(url: str, token: str, session: requests.Session, max_tries: int = 100, retry_delay: int = 5):
+    def _get_server(url: str, token: str, session: requests.Session, max_tries: int = 300, retry_delay: int = 5):
         """Attempts to establish a connection to the Plex server, retrying on failure."""
         for attempt in range(1, max_tries + 1):
             try:
                 return BasePlexServer(url, token, session=session)
-            except Unauthorized as e:
-                logger.warning("Unauthorized: Check your credentials. Retrying... (Attempt %d/%d)", attempt, max_tries)
-            except (RequestsConnectionError, BadRequest) as e:
-                logger.warning("ConnectionError: Unable to connect to Plex server. Retrying... (Attempt %d/%d)", attempt, max_tries)
-            except Exception as e:
-                logger.error("Unexpected error during connection to Plex: %s", str(e), exc_info=True)
+            except Unauthorized:
+                logger.warning(f"Unauthorized: Check your credentials. Retrying... (Attempt {attempt}/{max_tries})")
+            except (RequestsConnectionError, BadRequest):
+                logger.warning(f"Connection error: Unable to connect to Plex server. Retrying... (Attempt {attempt}/{max_tries})")
+            except Exception as exc:
+                logger.error(f"Unexpected error during connection to Plex: {exc}", exc_info=True)
             time.sleep(retry_delay)
 
-        logger.error("Failed to connect to Plex server after %d attempts.", max_tries)
+        logger.error(f"Failed to connect to Plex server after {max_tries} attempts.")
         return None
 
     def _get_logged_user(self):

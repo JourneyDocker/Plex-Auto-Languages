@@ -114,7 +114,7 @@ class PlexServerCache():
         return cache_file
 
     def _load(self):
-        logger.debug(f"[Cache] Attempting to load cache file from {self._cache_file_path}")
+        logger.debug("[Cache] Attempting to load cache file")
         if not os.path.exists(self._cache_file_path) or not os.path.isfile(self._cache_file_path):
             logger.info("[Cache] Cache file not found. Creating a new cache file before scanning the library.")
             return False

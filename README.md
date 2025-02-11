@@ -1,54 +1,85 @@
 # Plex Auto Languages
 
-Plex Auto Languages enhances your Plex experience by automatically updating the audio and subtitle settings of TV shows based on your preferences. Similar to Netflix, it remembers your language preferences for each TV show without interfering with your global settings or other users' preferences.
+Plex Auto Languages enhances your Plex experience by automatically updating the audio and subtitle settings of TV shows based on your preferences. Similar to Netflix, it remembers your language settings for each TV show without interfering with your global settings or other users' preferences.
+
+## Table of Contents
+
+- [Plex Auto Languages](#plex-auto-languages)
+  - [Table of Contents](#table-of-contents)
+  - [Features](#features)
+  - [Getting Started](#getting-started)
+    - [Requirements](#requirements)
+    - [Installation Options](#installation-options)
+      - [Docker Installation](#docker-installation)
+      - [Python Installation](#python-installation)
+  - [Configuration](#configuration)
+    - [Key Parameters](#key-parameters)
+      - [Plex Configuration](#plex-configuration)
+      - [Update Settings](#update-settings)
+      - [Notifications (Optional)](#notifications-optional)
+      - [Advanced Options](#advanced-options)
+    - [Environment Variable Summary](#environment-variable-summary)
+  - [License](#license)
 
 ## Features
 
-- **Seamless Language Selection**: Watch *Squid Game* in Korean with English subtitles? Just set it once for the first episode and enjoy the rest of the series hassle-free. 👌
-- **Per-Show Customization**: Want *The Mandalorian* in English and *Game of Thrones* in French? Preferences are tracked separately for each show. ✔️
-- **Multi-User Support**: Perfect for households with diverse preferences. Each user gets their tracks automatically and independently selected. ✔️
+- **Seamless Language Selection**:
+  Watch *Squid Game* in Korean with English subtitles? Set it once for the first episode and enjoy the rest of the series hassle-free. 👌
 
----
+- **Per-Show Customization**:
+  Want *The Mandalorian* in English and *Game of Thrones* in French? Preferences are tracked separately for each show. ✔️
+
+- **Multi-User Support**:
+  Perfect for households with diverse preferences. Each user gets their tracks automatically and independently selected. ✔️
 
 ## Getting Started
 
 ### Requirements
 
 To use Plex Auto Languages, you'll need:
-1. **Plex Token**: Learn how to retrieve yours from the [official Plex guide](https://support.plex.tv/articles/204059436-finding-an-authentication-token-x-plex-token/).
-2. **Python 3.8+** or **Docker**: The application can run natively via Python or as a Docker container.
+
+1. **Plex Token**:
+   Learn how to retrieve yours from the [official Plex guide](https://support.plex.tv/articles/204059436-finding-an-authentication-token-x-plex-token/).
+
+2. **Python 3.8+** or **Docker**:
+   The application can run natively via Python or as a Docker container.
 
 ---
 
-## Installation Options
+### Installation Options
 
-### Docker Installation
+#### Docker Installation
 
 Running Plex Auto Languages with Docker is the recommended approach.
 
-#### Docker Image Tags
+**Docker Image Tags:**
 
-The Docker image is available in three tag formats:
+- **`main` (Development)**:
+  Tracks the latest commit on the main branch. Includes the newest features but may be unstable.
 
-- **`main` (Development)**: Tracks the latest commit on the main branch. Includes the newest features but may be unstable.
-  - *Recommended for*: Developers and testers.
-  - *Note*: Updates with every new commit; may include breaking changes.
+  *Recommended for*: Developers and testers.
 
-- **`latest` (Stable Release)**: Points to the most recent stable release. Ideal for production environments.
-  - *Recommended for*: General use.
+  *Note*: Updates with every commit; may include breaking changes.
 
-- **`A.B.C.D` (Versioned Releases)**: Specific version tags for consistency and reliability.
-  - *Recommended for*: Environments requiring version control.
+- **`latest` (Stable Release)**:
+  Points to the most recent stable release. Ideal for production environments.
 
-#### Installation Options
+  *Recommended for*: General use.
+
+- **`A.B.C.D` (Versioned Releases)**:
+  Specific version tags for consistency and reliability.
+
+  *Recommended for*: Environments requiring strict version control.
+
+**Docker Registries:**
 
 The Docker image can be pulled from either of the following registries:
 - `ghcr.io/journeydocker/plex-auto-languages:<tagname>`
 - `journeyover/plex-auto-languages:<tagname>`
 
-#### Docker Compose Configuration
+**Docker Compose Configuration:**
 
-Here’s an example of a minimal `docker-compose.yml` setup:
+Here's an example of a minimal `docker-compose.yml` setup:
 
 ```yaml
 services:
@@ -62,9 +93,10 @@ services:
       - ./config:/config
 ```
 
-#### Run with Docker CLI
+**Run with Docker CLI:**
 
 Alternatively, you can run the container directly:
+
 ```bash
 docker run -d \
   -e PLEX_URL=http://plex:32400 \
@@ -74,38 +106,46 @@ docker run -d \
   journeyover/plex-auto-languages:main
 ```
 
-### Python Installation
+---
 
-#### Steps:
+#### Python Installation
+
+Follow these steps for a native Python setup:
 
 1. **Clone the Repository**:
+
    ```bash
    git clone git@github.com:JourneyDocker/Plex-Auto-Languages.git
    ```
+
 2. **Install Dependencies**:
+
    ```bash
    cd Plex-Auto-Languages
    python3 -m pip install -r requirements.txt
    ```
+
 3. **Create Configuration File**:
+
    Use the template in the [default configuration file](https://github.com/JourneyDocker/Plex-Auto-Languages/blob/main/config.example.yaml) to create your own `config.yaml`. Only `plex.url` and `plex.token` are required.
 
 4. **Run the Application**:
+
    ```bash
    python3 main.py -c ./config.yaml
    ```
 
----
-
 ## Configuration
 
-The application can be configured with either:
+The application can be configured using either:
+
 - **Environment Variables**
-- **YAML File** (mounted in `/config/config.yaml`)
+- **YAML File** (mounted at `/config/config.yaml`; see [config.example.yaml](https://github.com/JourneyDocker/Plex-Auto-Languages/blob/main/config.example.yaml) for example config)
 
 ### Key Parameters
 
 #### Plex Configuration
+
 ```yaml
 plex:
   url: "http://plex:32400"  # Required: Plex server URL
@@ -113,17 +153,23 @@ plex:
 ```
 
 #### Update Settings
+
 ```yaml
 plexautolanguages:
-  update_level: "show"       # Options: "show" (default), "season"
-  update_strategy: "all"     # Options: "all" (default), "next"
-  trigger_on_play: true       # Update language when playing an episode
-  trigger_on_scan: true       # Update language when new files are scanned
-  trigger_on_activity: false  # Update language when navigating Plex (experimental)
+  update_level: "show"          # Options: "show" (default), "season"
+  update_strategy: "all"        # Options: "all" (default), "next"
+  trigger_on_play: true         # Update language when playing an episode
+  trigger_on_scan: true         # Update language when new files are scanned
+  trigger_on_activity: false    # Update language when navigating Plex (experimental)
+  refresh_library_on_scan: true # Refresh cached library on Plex scans
+  ignore_labels:                # Ignore shows with these Plex labels
+    - PAL_IGNORE
 ```
 
 #### Notifications (Optional)
+
 Configure notifications with [Apprise](https://github.com/caronc/apprise):
+
 ```yaml
 notifications:
   enable: true
@@ -132,15 +178,34 @@ notifications:
 ```
 
 #### Advanced Options
+
 ```yaml
 scheduler:
   enable: true
   schedule_time: "04:30"
 data_path: ""  # Path for system/cache files
-debug: false    # Enable debug logs
+debug: false   # Enable debug logs
 ```
 
----
+### Environment Variable Summary
+
+| Environment Variable      | Default Value             | Description                                                                                                             |
+|---------------------------|---------------------------|-------------------------------------------------------------------------------------------------------------------------|
+| `PLEX_URL`                | *(none)*                  | URL to your Plex server. Replace `IP_ADDRESS` with your actual Plex server address.                                     |
+| `PLEX_TOKEN`              | *(none)*                  | Plex authentication token.                                                                                              |
+| `UPDATE_LEVEL`            | `show`                    | Determines whether the update applies to the entire show or just the current season. Accepted values: `show`, `season`. |
+| `UPDATE_STRATEGY`         | `next`                    | Chooses whether to update all episodes or only the next one. Accepted values: `all`, `next`.                            |
+| `TRIGGER_ON_PLAY`         | `true`                    | If set to true, playing an episode triggers a language update.                                                          |
+| `TRIGGER_ON_SCAN`         | `true`                    | If set to true, scanning for new files triggers a language update.                                                      |
+| `TRIGGER_ON_ACTIVITY`     | `false`                   | If set to true, browsing the Plex library triggers a language update.                                                   |
+| `REFRESH_LIBRARY_ON_SCAN` | `true`                    | Refreshes the cached library when the Plex server scans its library.                                                    |
+| `IGNORE_LABELS`           | `PAL_IGNORE`              | Comma-separated list of Plex labels. Shows with these labels will be ignored.                                           |
+| `SCHEDULER_ENABLE`        | `true`                    | Enables or disables the scheduler feature.                                                                              |
+| `SCHEDULER_SCHEDULE_TIME` | `02:00`                   | Time (in `HH:MM` format) when the scheduler starts its task.                                                            |
+| `DEBUG`                   | `false`                   | Enables debug mode for verbose logging.                                                                                 |
+
+> [!NOTE]
+> The Plex Token can also be provided as a Docker secret, the filepath of the secret must then be specified in the environment variable `PLEX_TOKEN_FILE` which defaults to `/run/secrets/plex_token`.
 
 ## License
 
