@@ -40,7 +40,6 @@ class PlexServerCache():
         if not self._load():
             # Create the cache file with the default empty state.
             self.save()
-            logger.debug("[Cache] Cache file created with initial empty data.")
             logger.info("[Cache] Scanning all episodes from the Plex library. This action should only take a few seconds but can take several minutes for larger libraries")
             self.refresh_library_cache()
             logger.info(f"[Cache] Scanned {len(self.episode_parts)} episodes from the library")
@@ -136,6 +135,14 @@ class PlexServerCache():
         self.newly_added = cache.get("newly_added", self.newly_added)
         self.newly_added = {key: isoparse(value) for key, value in self.newly_added.items()}
         self.episode_parts = cache.get("episode_parts", )
+
+        # Check if episode_parts is empty; if so, we assume the initial scan was incomplete.
+        if not self.episode_parts:
+            logger.warning(
+                "[Cache] The cache data is empty. This likely indicates that the initial library scan did not complete. Triggering a new scan."
+            )
+            return False
+
         self._last_refresh = isoparse(cache.get("last_refresh", self._last_refresh))
         return True
 
