@@ -121,13 +121,21 @@ class TrackChanges():
             self._title = ""
             self._description = ""
             return
-        season_numbers = [e.seasonNumber for e in episodes]
-        min_season_number, max_season_number = min(season_numbers), max(season_numbers)
-        min_episode_number = min([e.episodeNumber for e in episodes if e.seasonNumber == min_season_number])
-        max_episode_number = max([e.episodeNumber for e in episodes if e.seasonNumber == max_season_number])
-        from_str = f"S{min_season_number:02}E{min_episode_number:02}"
-        to_str = f"S{max_season_number:02}E{max_episode_number:02}"
-        range_str = f"{from_str} - {to_str}" if from_str != to_str else from_str
+
+        valid_episodes = [e for e in episodes if e.seasonNumber is not None and e.episodeNumber is not None]
+        invalid_episodes = [e for e in episodes if e.seasonNumber is None or e.episodeNumber is None]
+
+        if valid_episodes:
+            season_numbers = [e.seasonNumber for e in valid_episodes]
+            min_season_number, max_season_number = min(season_numbers), max(season_numbers)
+            min_episode_number = min([e.episodeNumber for e in valid_episodes if e.seasonNumber == min_season_number])
+            max_episode_number = max([e.episodeNumber for e in valid_episodes if e.seasonNumber == max_season_number])
+            from_str = f"S{min_season_number:02}E{min_episode_number:02}"
+            to_str = f"S{max_season_number:02}E{max_episode_number:02}"
+            range_str = f"{from_str} - {to_str}" if from_str != to_str else from_str
+        else:
+            range_str = f"Unable to determine range due to missing season or episode number for {len(invalid_episodes)} episode(s)"
+
         nb_updated = len({e.key for e, _, _, _ in self._changes})
         nb_total = len(episodes)
         self._title = self._reference.show().title
