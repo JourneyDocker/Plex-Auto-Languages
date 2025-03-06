@@ -96,9 +96,18 @@ class UnprivilegedPlexServer():
 
     @staticmethod
     def get_episode_short_name(episode: Episode, include_show: bool = True):
-        if include_show:
-            return f"'{episode.show().title}' (S{episode.seasonNumber:02}E{episode.episodeNumber:02})"
-        return f"S{episode.seasonNumber:02}E{episode.episodeNumber:02}"
+        try:
+            season_num = episode.seasonNumber if episode.seasonNumber is not None else 0
+            episode_num = episode.episodeNumber if episode.episodeNumber is not None else 0
+            if include_show:
+                show = episode.show()
+                if show is None:
+                    return f"Unknown Show (S{season_num:02}E{episode_num:02})"
+                return f"'{show.title}' (S{season_num:02}E{episode_num:02})"
+            return f"S{season_num:02}E{episode_num:02}"
+        except Exception as e:
+            logger.warning(f"Error getting episode name: {str(e)}")
+            return "Unknown Episode"
 
 
 class PlexServer(UnprivilegedPlexServer):
