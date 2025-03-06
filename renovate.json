@@ -1,45 +1,5 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "commitMessagePrefix": "{{packageFile}}:",
-  "configMigration": true,
-  "dependencyDashboard": true,
-  "dependencyDashboardAutoclose": false,
-  "dependencyDashboardLabels": [
-    "dependencies",
-    "tracker"
-  ],
-  "enabled": true,
-  "extends": [
-    "config:recommended",
-    ":semanticCommits",
-    ":rebaseStalePrs",
-    ":disableRateLimiting"
-  ],
-  "forkProcessing": "enabled",
-  "labels": [
-    "dependencies"
-  ],
-  "packageRules": [
-    {
-      "automerge": false,
-      "automergeStrategy": "squash",
-      "automergeType": "pr",
-      "extends": [
-        "schedule:earlyMondays"
-      ],
-      "groupName": "devDependencies (non-major)",
-      "groupSlug": "dev-dependencies",
-      "matchPackageNames": [
-        "*"
-      ],
-      "matchUpdateTypes": [
-        "minor",
-        "patch"
-      ],
-      "minimumReleaseAge": "1 day"
-    }
-  ],
-  "rangeStrategy": "bump",
-  "rebaseWhen": "conflicted",
-  "timezone": "America/Chicago"
+  "extends": ["github>journeyover/.github"],
+  "forkProcessing": "enabled"
 }
