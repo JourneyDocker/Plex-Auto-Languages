@@ -2,6 +2,22 @@ import logging
 
 
 class CustomFormatter(logging.Formatter):
+    """
+    Custom log formatter with color-coded output for different log levels.
+
+    This formatter applies different ANSI color codes to log messages based on
+    their severity level, making logs more readable in terminal output.
+
+    Attributes:
+        grey (str): ANSI color code for grey text.
+        blue (str): ANSI color code for blue text.
+        yellow (str): ANSI color code for yellow text.
+        red (str): ANSI color code for red text.
+        bold_red (str): ANSI color code for bold red text.
+        reset (str): ANSI code to reset text formatting.
+        fmt (str): The log message format string.
+        FORMATS (dict): Mapping of log levels to their formatted strings with colors.
+    """
     grey = "\x1b[38;21m"
     blue = "\x1b[38;5;39m"
     yellow = "\x1b[38;5;226m"
@@ -19,12 +35,31 @@ class CustomFormatter(logging.Formatter):
     }
 
     def format(self, record):
+        """
+        Format the log record with appropriate color based on log level.
+
+        Args:
+            record (logging.LogRecord): The log record to format.
+
+        Returns:
+            str: The formatted log message with color coding.
+        """
         log_fmt = self.FORMATS.get(record.levelno, self.grey + self.fmt + self.reset)
         formatter = logging.Formatter(log_fmt)
         return formatter.format(record)
 
 
-def init_logger():
+def init_logger() -> logging.Logger:
+    """
+    Initialize and configure the application logger.
+
+    Creates a logger with a custom formatter that outputs color-coded logs
+    to the console. Ensures handlers are only added once and prevents
+    log propagation to avoid duplicate entries.
+
+    Returns:
+        logging.Logger: Configured logger instance ready for use.
+    """
     logger = logging.getLogger("Logger")
 
     # Avoid adding handlers multiple times
@@ -40,5 +75,14 @@ def init_logger():
     return logger
 
 
-def get_logger():
+def get_logger() -> logging.Logger:
+    """
+    Retrieve the application logger instance.
+
+    This function provides a convenient way to access the logger
+    from anywhere in the application without reinitializing it.
+
+    Returns:
+        logging.Logger: The application's logger instance.
+    """
     return logging.getLogger("Logger")

@@ -15,6 +15,19 @@ logger = get_logger()
 
 
 def deep_dict_update(original, update):
+    """
+    Recursively updates a dictionary with values from another dictionary.
+
+    This function performs a deep merge of two dictionaries, preserving nested
+    structures and only overwriting values at the leaf level.
+
+    Args:
+        original (dict): The original dictionary to be updated
+        update (dict): The dictionary containing values to update with
+
+    Returns:
+        dict: The updated dictionary with merged values
+    """
     for key, value in update.items():
         if isinstance(value, Mapping):
             original[key] = deep_dict_update(original.get(key, {}), value)
@@ -24,6 +37,20 @@ def deep_dict_update(original, update):
 
 
 def env_dict_update(original, var_name: str = ""):
+    """
+    Updates dictionary values from environment variables.
+
+    Recursively traverses a dictionary and replaces values with corresponding
+    environment variables if they exist. Environment variable names are constructed
+    by converting dictionary keys to uppercase and joining with underscores.
+
+    Args:
+        original (dict): The dictionary to update with environment variables
+        var_name (str): The parent variable name prefix for nested dictionaries
+
+    Returns:
+        dict: The updated dictionary with values from environment variables
+    """
     for key, value in original.items():
         new_var_name = (f"{var_name}_{key}" if var_name != "" else key).upper()
         if isinstance(value, Mapping):
@@ -35,6 +62,17 @@ def env_dict_update(original, var_name: str = ""):
 
 
 def is_docker():
+    """
+    Determines if the application is running inside a Docker container.
+
+    Checks multiple indicators to detect Docker environment:
+    1. Presence of /.dockerenv file
+    2. Docker references in /proc/self/cgroup
+    3. CONTAINERIZED environment variable set to "true"
+
+    Returns:
+        bool: True if running in Docker, False otherwise
+    """
     path = "/proc/self/cgroup"
     return (
         os.path.exists("/.dockerenv") or
@@ -43,9 +81,33 @@ def is_docker():
     )
 
 
-class Configuration():
+class Configuration:
+    """
+    Manages application configuration from multiple sources.
+
+    This class handles loading, merging, validating, and accessing configuration
+    settings from default values, user config files, environment variables, and
+    Docker secrets. It provides a unified interface for accessing configuration
+    parameters throughout the application.
+
+    Attributes:
+        _config (dict): The complete configuration dictionary with all settings
+    """
 
     def __init__(self, user_config_path: str):
+        """
+        Initializes the Configuration object.
+
+        Loads configuration from default settings, user config file, environment
+        variables, and Docker secrets. Validates the configuration and sets up
+        system-specific settings.
+
+        Args:
+            user_config_path (str): Path to the user's configuration file
+
+        Raises:
+            InvalidConfiguration: If the configuration fails validation
+        """
         root_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
         default_config_path = os.path.join(root_dir, "config", "default.yaml")
         with open(default_config_path, "r", encoding="utf-8") as stream:
@@ -63,9 +125,37 @@ class Configuration():
             logger.debug("Debug mode enabled")
 
     def get(self, parameter_path: str):
+        """
+        Retrieves a configuration value using a dot-notation path.
+
+        Allows accessing nested configuration values using dot notation
+        (e.g., "plex.token" to access self._config["plex"]["token"]).
+
+        Args:
+            parameter_path (str): Dot-notation path to the configuration parameter
+
+        Returns:
+            Any: The value of the requested configuration parameter
+
+        Raises:
+            KeyError: If the parameter path doesn't exist in the configuration
+        """
         return self._get(self._config, parameter_path)
 
     def _get(self, config: dict, parameter_path: str):
+        """
+        Internal recursive method to retrieve nested configuration values.
+
+        Args:
+            config (dict): The configuration dictionary to search in
+            parameter_path (str): Dot-notation path to the configuration parameter
+
+        Returns:
+            Any: The value of the requested configuration parameter
+
+        Raises:
+            KeyError: If the parameter path doesn't exist in the configuration
+        """
         separator = "."
         if separator in parameter_path:
             splitted = parameter_path.split(separator)
@@ -73,14 +163,32 @@ class Configuration():
         return config[parameter_path]
 
     def _override_from_config_file(self, user_config_path: str):
+        """
+        Overrides default configuration with values from a user config file.
+
+        Args:
+            user_config_path (str): Path to the user's configuration file
+        """
         with open(user_config_path, "r", encoding="utf-8") as stream:
             user_config = yaml.safe_load(stream).get("plexautolanguages", {})
         self._config = deep_dict_update(self._config, user_config)
 
     def _override_from_env(self):
+        """
+        Overrides configuration with values from environment variables.
+
+        Uses env_dict_update to recursively update configuration values
+        from corresponding environment variables.
+        """
         self._config = env_dict_update(self._config)
 
     def _override_plex_token_from_secret(self):
+        """
+        Overrides Plex token with value from Docker secret if available.
+
+        Checks for a Plex token in the Docker secrets location or a custom
+        location specified by the PLEX_TOKEN_FILE environment variable.
+        """
         plex_token_file_path = os.environ.get("PLEX_TOKEN_FILE", "/run/secrets/plex_token")
         if not os.path.exists(plex_token_file_path):
             return
@@ -90,11 +198,26 @@ class Configuration():
         self._config["plex"]["token"] = plex_token
 
     def _postprocess_config(self):
+        """
+        Performs post-processing on loaded configuration values.
+
+        Currently handles converting comma-separated string lists to actual lists
+        for the ignore_labels configuration parameter.
+        """
         ignore_labels_config = self.get("ignore_labels")
         if isinstance(ignore_labels_config, str):
             self._config["ignore_labels"] = ignore_labels_config.split(",")
 
     def _validate_config(self):
+        """
+        Validates the configuration for required values and correct formats.
+
+        Checks for required parameters, valid values for enumerated options,
+        and proper formatting of specific parameters like schedule_time.
+
+        Raises:
+            InvalidConfiguration: If any validation check fails
+        """
         if self.get("plex.url") == "":
             logger.error("A Plex URL is required")
             raise InvalidConfiguration
@@ -119,12 +242,35 @@ class Configuration():
         logger.info("The provided configuration has been successfully validated")
 
     def _add_system_config(self):
+        """
+        Adds system-specific configuration values.
+
+        Determines if running in Docker and sets up the data directory
+        based on the platform and configuration.
+        """
         self._config["docker"] = is_docker()
         self._config["data_dir"] = self._get_data_directory("PlexAutoLanguages")
         if not os.path.exists(self._config["data_dir"]):
             os.makedirs(self._config["data_dir"])
 
     def _get_data_directory(self, app_name: str):
+        """
+        Determines the appropriate data directory for the application.
+
+        Selects the data directory based on:
+        1. User-specified data_path if provided
+        2. Docker container path if running in Docker
+        3. Platform-specific default locations
+
+        Args:
+            app_name (str): The name of the application for directory naming
+
+        Returns:
+            str: The path to the data directory
+
+        Warns:
+            If running on an unsupported operating system
+        """
         home = pathlib.Path.home()
         data_path = self.get("data_path")
         if data_path is not None and data_path != "" and os.path.exists(data_path) and os.path.isdir(data_path):

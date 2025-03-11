@@ -14,9 +14,43 @@ if TYPE_CHECKING:
 
 logger = get_logger()
 
-class PlexServerCache():
+class PlexServerCache:
+    """
+    Manages caching for Plex server data to improve performance and reduce API calls.
+
+    This class handles persistent storage of various Plex server data including episode metadata,
+    user information, playback states, and recently processed items. It provides methods to
+    load, save, and refresh cached data.
+
+    Attributes:
+        _is_refreshing (bool): Flag indicating if a library refresh is in progress.
+        _encoder (DateTimeEncoder): JSON encoder that handles datetime objects.
+        _plex (PlexServer): Reference to the parent PlexServer instance.
+        _cache_file_path (str): Path to the cache file on disk.
+        _last_refresh (datetime): Timestamp of the last library cache refresh.
+        session_states (dict): Maps session keys to session states.
+        default_streams (dict): Maps item keys to default audio and subtitle stream IDs.
+        user_clients (dict): Maps client identifiers to user IDs.
+        newly_added (dict): Maps episode IDs to their added timestamps.
+        newly_updated (dict): Maps episode IDs to their updated timestamps.
+        recent_activities (dict): Maps (user_id, item_id) tuples to activity timestamps.
+        _instance_users (list): List of users with access to the Plex server.
+        _instance_user_tokens (dict): Maps user IDs to their authentication tokens.
+        _instance_users_valid_until (datetime): Expiration timestamp for cached user data.
+        episode_parts (dict): Maps episode keys to their media part keys.
+    """
 
     def __init__(self, plex: PlexServer):
+        """
+        Initialize the PlexServerCache with a reference to the PlexServer.
+
+        Sets up the cache structure and attempts to load existing cache data from disk.
+        If loading fails or no cache exists, initializes an empty cache and triggers
+        a library scan.
+
+        Args:
+            plex (PlexServer): The PlexServer instance this cache belongs to.
+        """
         self._is_refreshing = False
         self._encoder = DateTimeEncoder()
         self._plex = plex
@@ -44,19 +78,55 @@ class PlexServerCache():
             self.refresh_library_cache()
             logger.info(f"[Cache] Scanned {len(self.episode_parts)} episodes from the library")
 
-    def should_process_recently_added(self, episode_id: str, added_at: datetime):
+    def should_process_recently_added(self, episode_id: str, added_at: datetime) -> bool:
+        """
+        Determines if a recently added episode should be processed.
+
+        Checks if the episode has already been processed with the same timestamp.
+        If not, records the episode as processed and returns True.
+
+        Args:
+            episode_id (str): The Plex key identifier for the episode.
+            added_at (datetime): The timestamp when the episode was added.
+
+        Returns:
+            bool: True if the episode should be processed, False if it was already processed.
+        """
         if episode_id in self.newly_added and self.newly_added[episode_id] == added_at:
             return False
         self.newly_added[episode_id] = added_at
         return True
 
-    def should_process_recently_updated(self, episode_id: str):
+    def should_process_recently_updated(self, episode_id: str) -> bool:
+        """
+        Determines if a recently updated episode should be processed.
+
+        Checks if the episode has already been processed since the last library refresh.
+        If not, records the episode as processed and returns True.
+
+        Args:
+            episode_id (str): The Plex key identifier for the episode.
+
+        Returns:
+            bool: True if the episode should be processed, False if it was already processed.
+        """
         if episode_id in self.newly_updated and self.newly_updated[episode_id] >= self._last_refresh:
             return False
         self.newly_updated[episode_id] = datetime.now()
         return True
 
-    def refresh_library_cache(self):
+    def refresh_library_cache(self) -> tuple[list, list]:
+        """
+        Refreshes the cached library data by scanning all episodes in the Plex library.
+
+        Updates the episode_parts dictionary with current data from the Plex server.
+        Identifies episodes that have been added or updated since the last refresh.
+
+        Returns:
+            tuple[list, list]: A tuple containing two lists:
+                - List of newly added episodes
+                - List of updated episodes
+        """
         if self._is_refreshing:
             logger.debug("[Cache] The library cache is already being refreshed")
             return [], []
@@ -80,12 +150,32 @@ class PlexServerCache():
         self._is_refreshing = False
         return added, updated
 
-    def get_instance_users(self, check_validity=True):
+    def get_instance_users(self, check_validity=True) -> list | None:
+        """
+        Retrieves the cached list of Plex server users.
+
+        Args:
+            check_validity (bool, optional): Whether to check if the cached data is still valid.
+                Defaults to True.
+
+        Returns:
+            list | None: A copy of the cached users list, or None if the cache is invalid
+                and check_validity is True.
+        """
         if check_validity and datetime.now() > self._instance_users_valid_until:
             return None
         return copy.deepcopy(self._instance_users)
 
-    def set_instance_users(self, instance_users):
+    def set_instance_users(self, instance_users: list) -> None:
+        """
+        Updates the cached list of Plex server users.
+
+        Stores a deep copy of the users list and sets an expiration time.
+        Also caches authentication tokens for each user.
+
+        Args:
+            instance_users (list): List of user objects to cache.
+        """
         self._instance_users = copy.deepcopy(instance_users)
         self._instance_users_valid_until = datetime.now() + timedelta(hours=12)
         for user in self._instance_users:
@@ -93,13 +183,40 @@ class PlexServerCache():
                 continue
             self._instance_user_tokens[str(user.id)] = user.get_token(self._plex.unique_id)
 
-    def get_instance_user_token(self, user_id):
+    def get_instance_user_token(self, user_id: str) -> str | None:
+        """
+        Retrieves a cached authentication token for a specific user.
+
+        Args:
+            user_id (str): The ID of the user whose token to retrieve.
+
+        Returns:
+            str | None: The user's authentication token, or None if not found.
+        """
         return self._instance_user_tokens.get(str(user_id), None)
 
-    def set_instance_user_token(self, user_id, token):
+    def set_instance_user_token(self, user_id: str, token: str) -> None:
+        """
+        Caches an authentication token for a specific user.
+
+        Args:
+            user_id (str): The ID of the user.
+            token (str): The authentication token to cache.
+        """
         self._instance_user_tokens[str(user_id)] = token
 
-    def _get_cache_file_path(self):
+    def _get_cache_file_path(self) -> str:
+        """
+        Determines the file path for the cache file.
+
+        Creates the cache directory if it doesn't exist.
+
+        Returns:
+            str: The absolute path to the cache file.
+
+        Raises:
+            Exception: If the cache directory cannot be created.
+        """
         data_dir = self._plex.config.get("data_dir")
         cache_dir = os.path.join(data_dir, "cache")
         cache_file = os.path.join(cache_dir, self._plex.unique_id)
@@ -112,10 +229,19 @@ class PlexServerCache():
                 raise
         return cache_file
 
-    def _load(self):
+    def _load(self) -> bool:
+        """
+        Loads cached data from the cache file.
+
+        Attempts to read and parse the cache file. If the file doesn't exist or
+        is corrupted, returns False to indicate a fresh cache should be created.
+
+        Returns:
+            bool: True if the cache was successfully loaded, False otherwise.
+        """
         logger.debug("[Cache] Attempting to load cache file")
         if not os.path.exists(self._cache_file_path) or not os.path.isfile(self._cache_file_path):
-            logger.info("[Cache] Cache file not found. Creating a new cache file before scanning the library.")
+            logger.info("[Cache] Cache file not found. Creating a new cache file before scanning the library")
             return False
         try:
             with open(self._cache_file_path, "r", encoding="utf-8") as stream:
@@ -139,14 +265,23 @@ class PlexServerCache():
         # Check if episode_parts is empty; if so, we assume the initial scan was incomplete.
         if not self.episode_parts:
             logger.warning(
-                "[Cache] The cache data is empty. This likely indicates that the initial library scan did not complete. Triggering a new scan."
+                "[Cache] The cache data is empty. This likely indicates that the initial library scan did not complete. Triggering a new scan"
             )
             return False
 
         self._last_refresh = isoparse(cache.get("last_refresh", self._last_refresh))
         return True
 
-    def save(self):
+    def save(self) -> None:
+        """
+        Saves the current cache state to the cache file.
+
+        Serializes the cache data to JSON and writes it to the cache file.
+        Uses a custom JSON encoder to handle datetime objects.
+
+        Raises:
+            Exception: Logs an error if saving fails but doesn't re-raise the exception.
+        """
         logger.debug(f"[Cache] Saving server cache to file at {self._cache_file_path}")
         cache = {
             "newly_updated": self.newly_updated,

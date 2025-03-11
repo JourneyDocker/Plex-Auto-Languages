@@ -13,14 +13,45 @@ logger = get_logger()
 
 
 class PlexStatus(PlexAlert):
+    """
+    Handles status update events from Plex server.
+
+    This class processes status notifications such as library scan completions
+    and manages the processing of newly added or updated episodes in the library.
+    It triggers appropriate track selection actions based on the event type.
+
+    Attributes:
+        TYPE (str): The alert type identifier ('status').
+    """
 
     TYPE = "status"
 
     @property
-    def title(self):
+    def title(self) -> str:
+        """
+        Gets the status event title from the message.
+
+        Returns:
+            str: The title of the status event (e.g., 'Library scan complete').
+        """
         return self._message.get("title", None)
 
-    def process(self, plex: PlexServer):
+    def process(self, plex: 'PlexServer') -> None:
+        """
+        Processes the status event and triggers appropriate actions.
+
+        This method handles library scan completion events by:
+        1. Refreshing the library cache or fetching recently added episodes
+        2. Processing newly added episodes for all users
+        3. Processing updated episodes for all users
+        4. Applying appropriate track selection based on user preferences
+
+        Args:
+            plex (PlexServer): The Plex server instance to interact with.
+
+        Returns:
+            None
+        """
         if self.title != "Library scan complete":
             return
         logger.debug("[Status] The Plex server scanned the library")

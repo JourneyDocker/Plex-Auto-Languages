@@ -15,34 +15,96 @@ logger = get_logger()
 
 
 class PlexTimeline(PlexAlert):
+    """
+    Handles timeline-related events from Plex server.
+
+    This class processes timeline notifications for library items, particularly
+    focusing on newly added episodes. It detects when new episodes are added to
+    the library and triggers appropriate track selection actions.
+
+    Attributes:
+        TYPE (str): The alert type identifier ('timeline').
+    """
 
     TYPE = "timeline"
 
     @property
-    def has_metadata_state(self):
+    def has_metadata_state(self) -> bool:
+        """
+        Checks if the timeline event contains metadata state information.
+
+        Returns:
+            bool: True if the message contains metadata state, False otherwise.
+        """
         return "metadataState" in self._message
 
     @property
-    def has_media_state(self):
+    def has_media_state(self) -> bool:
+        """
+        Checks if the timeline event contains media state information.
+
+        Returns:
+            bool: True if the message contains media state, False otherwise.
+        """
         return "mediaState" in self._message
 
     @property
-    def item_id(self):
+    def item_id(self) -> int:
+        """
+        Gets the item ID from the timeline event.
+
+        Returns:
+            int: The unique identifier for the media item in Plex.
+        """
         return int(self._message.get("itemID", None))
 
     @property
-    def identifier(self):
+    def identifier(self) -> str:
+        """
+        Gets the identifier from the timeline event.
+
+        Returns:
+            str: The identifier string (e.g., 'com.plexapp.plugins.library').
+        """
         return self._message.get("identifier", None)
 
     @property
-    def state(self):
+    def state(self) -> int:
+        """
+        Gets the state value from the timeline event.
+
+        Returns:
+            int: The state value indicating the current status of the item.
+        """
         return self._message.get("state", None)
 
     @property
-    def entry_type(self):
+    def entry_type(self) -> int:
+        """
+        Gets the entry type from the timeline event.
+
+        Returns:
+            int: The type value indicating the kind of timeline entry.
+        """
         return self._message.get("type", None)
 
-    def process(self, plex: PlexServer):
+    def process(self, plex: 'PlexServer') -> None:
+        """
+        Processes the timeline event and triggers appropriate actions.
+
+        This method handles timeline events by:
+        1. Filtering out irrelevant events (metadata/media state changes, non-library events)
+        2. Verifying the media is a TV show episode
+        3. Checking if the episode was recently added
+        4. Ensuring the episode hasn't already been processed
+        5. Triggering track selection for all users based on their preferences
+
+        Args:
+            plex (PlexServer): The Plex server instance to interact with.
+
+        Returns:
+            None
+        """
         if self.has_metadata_state or self.has_media_state:
             return
         if self.identifier != "com.plexapp.plugins.library" or self.state != 5 or self.entry_type == -1:

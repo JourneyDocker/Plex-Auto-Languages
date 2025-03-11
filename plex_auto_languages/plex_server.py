@@ -1,7 +1,7 @@
 import time
 import requests
 import itertools
-from typing import Union, Callable
+from typing import Union, Callable, List, Tuple, Optional
 from datetime import datetime, timedelta
 from requests import ConnectionError as RequestsConnectionError
 from plexapi.media import MediaPart
@@ -25,14 +25,42 @@ logger = get_logger()
 
 
 class UnprivilegedPlexServer():
+    """
+    Base class for interacting with a Plex server with limited privileges.
+
+    This class provides core functionality for connecting to and querying a Plex server
+    without requiring administrative access. It handles basic operations like fetching
+    items, checking connection status, and retrieving media information.
+
+    Attributes:
+        _session (requests.Session): HTTP session for making requests to the Plex server.
+        _plex_url (str): URL of the Plex server.
+        _plex (BasePlexServer): The underlying PlexAPI server instance.
+    """
 
     def __init__(self, url: str, token: str, session: requests.Session = requests.Session()):
+        """
+        Initialize an unprivileged Plex server connection.
+
+        Args:
+            url (str): The URL of the Plex server.
+            token (str): Authentication token for the Plex server.
+            session (requests.Session, optional): HTTP session to use for requests. Defaults to a new session.
+        """
         self._session = session
         self._plex_url = url
         self._plex = self._get_server(url, token, self._session)
 
     @property
-    def connected(self):
+    def connected(self) -> bool:
+        """
+        Check if the connection to the Plex server is active.
+
+        Attempts to fetch library sections to verify the connection is working.
+
+        Returns:
+            bool: True if connected successfully, False otherwise.
+        """
         if self._plex is None:
             logger.debug("No Plex instance available (self._plex is None)")
             return False
@@ -49,37 +77,93 @@ class UnprivilegedPlexServer():
             return False
 
     @property
-    def unique_id(self):
+    def unique_id(self) -> str:
+        """
+        Get the unique identifier of the Plex server.
+
+        Returns:
+            str: The machine identifier of the Plex server.
+        """
         return self._plex.machineIdentifier
 
     @staticmethod
-    def _get_server(url: str, token: str, session: requests.Session):
+    def _get_server(url: str, token: str, session: requests.Session) -> Optional[BasePlexServer]:
+        """
+        Create a connection to a Plex server.
+
+        Args:
+            url (str): The URL of the Plex server.
+            token (str): Authentication token for the Plex server.
+            session (requests.Session): HTTP session to use for requests.
+
+        Returns:
+            Optional[BasePlexServer]: A PlexAPI server instance if successful, None otherwise.
+        """
         try:
             return BasePlexServer(url, token, session=session)
         except (RequestsConnectionError, Unauthorized):
             return None
 
-    def fetch_item(self, item_id: Union[str, int]):
+    def fetch_item(self, item_id: Union[str, int]) -> Optional[object]:
+        """
+        Fetch a media item from the Plex server by its ID.
+
+        Args:
+            item_id (Union[str, int]): The ID of the item to fetch.
+
+        Returns:
+            Optional[object]: The requested media item if found, None otherwise.
+        """
         try:
             return self._plex.fetchItem(item_id)
         except NotFound:
             return None
 
-    def episodes(self):
+    def episodes(self) -> List[Episode]:
+        """
+        Get all episodes from the Plex server.
+
+        Returns:
+            List[Episode]: A list of all episodes in the Plex library.
+        """
         return self._plex.library.all(libtype="episode", container_size=1000)
 
-    def get_recently_added_episodes(self, minutes: int):
+    def get_recently_added_episodes(self, minutes: int) -> List[Episode]:
+        """
+        Get episodes that were recently added to the Plex server.
+
+        Args:
+            minutes (int): Number of minutes to look back for recently added episodes.
+
+        Returns:
+            List[Episode]: A list of episodes added within the specified time frame.
+        """
         episodes = []
         for section in self.get_show_sections():
             recent = section.searchEpisodes(sort="addedAt:desc", filters={"addedAt>>": f"{minutes}m"})
             episodes.extend(recent)
         return episodes
 
-    def get_show_sections(self):
+    def get_show_sections(self) -> List[ShowSection]:
+        """
+        Get all TV show sections from the Plex library.
+
+        Returns:
+            List[ShowSection]: A list of all TV show library sections.
+        """
         return [s for s in self._plex.library.sections() if isinstance(s, ShowSection)]
 
     @staticmethod
-    def get_last_watched_or_first_episode(show: Show):
+    def get_last_watched_or_first_episode(show: Show) -> Optional[Episode]:
+        """
+        Get the most recently watched episode of a show, or the first episode if none have been watched.
+
+        Args:
+            show (Show): The show to get an episode from.
+
+        Returns:
+            Optional[Episode]: The last watched episode or first episode, None if the show has no episodes.
+        """
         watched_episodes = show.watched()
         if len(watched_episodes) == 0:
             all_episodes = show.episodes()
@@ -89,13 +173,32 @@ class UnprivilegedPlexServer():
         return watched_episodes[-1]
 
     @staticmethod
-    def get_selected_streams(episode: Union[Episode, MediaPart]):
+    def get_selected_streams(episode: Union[Episode, MediaPart]) -> Tuple[Optional[object], Optional[object]]:
+        """
+        Get the currently selected audio and subtitle streams for an episode.
+
+        Args:
+            episode (Union[Episode, MediaPart]): The episode or media part to check.
+
+        Returns:
+            Tuple[Optional[object], Optional[object]]: A tuple containing the selected audio stream and subtitle stream.
+        """
         audio_stream = ([a for a in episode.audioStreams() if a.selected] + [None])[0]
         subtitle_stream = ([s for s in episode.subtitleStreams() if s.selected] + [None])[0]
         return audio_stream, subtitle_stream
 
     @staticmethod
-    def get_episode_short_name(episode: Episode, include_show: bool = True):
+    def get_episode_short_name(episode: Episode, include_show: bool = True) -> str:
+        """
+        Get a short, formatted name for an episode.
+
+        Args:
+            episode (Episode): The episode to get a name for.
+            include_show (bool, optional): Whether to include the show title in the name. Defaults to True.
+
+        Returns:
+            str: A formatted string representing the episode, e.g., "'Show Title' (S01E02)" or "S01E02".
+        """
         try:
             season_num = episode.seasonNumber if episode.seasonNumber is not None else 0
             episode_num = episode.episodeNumber if episode.episodeNumber is not None else 0
@@ -111,8 +214,34 @@ class UnprivilegedPlexServer():
 
 
 class PlexServer(UnprivilegedPlexServer):
+    """
+    Extended Plex server class with administrative capabilities.
+
+    This class extends UnprivilegedPlexServer with additional functionality for managing
+    user accounts, handling alerts, processing media changes, and applying language preferences.
+
+    Attributes:
+        notifier (Notifier): Notification service for sending alerts about changes.
+        config (Configuration): Configuration settings for the application.
+        _user (object): The currently logged-in Plex user.
+        _alert_handler (PlexAlertHandler): Handler for processing Plex server alerts.
+        _alert_listener (PlexAlertListener): Listener for Plex server events.
+        cache (PlexServerCache): Cache for storing Plex server data to improve performance.
+    """
 
     def __init__(self, url: str, token: str, notifier: Notifier, config: Configuration):
+        """
+        Initialize a Plex server with administrative capabilities.
+
+        Args:
+            url (str): The URL of the Plex server.
+            token (str): Authentication token for the Plex server.
+            notifier (Notifier): Notification service for sending alerts.
+            config (Configuration): Configuration settings for the application.
+
+        Raises:
+            UserNotFound: If the user associated with the provided token cannot be found.
+        """
         super().__init__(url, token)
         self.notifier = notifier
         self.config = config
@@ -126,20 +255,50 @@ class PlexServer(UnprivilegedPlexServer):
         self.cache = PlexServerCache(self)
 
     @property
-    def user_id(self):
+    def user_id(self) -> Optional[str]:
+        """
+        Get the ID of the currently logged-in user.
+
+        Returns:
+            Optional[str]: The user ID if available, None otherwise.
+        """
         return self._user.id if self._user is not None else None
 
     @property
-    def username(self):
+    def username(self) -> Optional[str]:
+        """
+        Get the name of the currently logged-in user.
+
+        Returns:
+            Optional[str]: The username if available, None otherwise.
+        """
         return self._user.name if self._user is not None else None
 
     @property
-    def is_alive(self):
+    def is_alive(self) -> bool:
+        """
+        Check if the server connection and alert listener are active.
+
+        Returns:
+            bool: True if the server is connected and the alert listener is running, False otherwise.
+        """
         return self.connected and self._alert_listener is not None and self._alert_listener.is_alive()
 
     @staticmethod
-    def _get_server(url: str, token: str, session: requests.Session, max_tries: int = 300, retry_delay: int = 5):
-        """Attempts to establish a connection to the Plex server, retrying on failure."""
+    def _get_server(url: str, token: str, session: requests.Session, max_tries: int = 300, retry_delay: int = 5) -> Optional[BasePlexServer]:
+        """
+        Attempts to establish a connection to the Plex server, retrying on failure.
+
+        Args:
+            url (str): The URL of the Plex server.
+            token (str): Authentication token for the Plex server.
+            session (requests.Session): HTTP session to use for requests.
+            max_tries (int, optional): Maximum number of connection attempts. Defaults to 300.
+            retry_delay (int, optional): Delay in seconds between retry attempts. Defaults to 5.
+
+        Returns:
+            Optional[BasePlexServer]: A PlexAPI server instance if successful, None after exhausting all attempts.
+        """
         for attempt in range(1, max_tries + 1):
             try:
                 return BasePlexServer(url, token, session=session)
@@ -151,11 +310,16 @@ class PlexServer(UnprivilegedPlexServer):
                 logger.error(f"Unexpected error during connection to Plex: {exc}", exc_info=True)
             time.sleep(retry_delay)
 
-        logger.error(f"Failed to connect to Plex server after {max_tries} attempts.")
+        logger.error(f"Failed to connect to Plex server after {max_tries} attempts")
         return None
 
-    def _get_logged_user(self):
-        """Retrieves the currently logged-in Plex system account."""
+    def _get_logged_user(self) -> Optional[object]:
+        """
+        Retrieves the currently logged-in Plex system account.
+
+        Returns:
+            Optional[object]: The user account object if found, None otherwise.
+        """
         if self._plex is None:
             return None
         try:
@@ -168,10 +332,21 @@ class PlexServer(UnprivilegedPlexServer):
             return None
         return None
 
-    def save_cache(self):
+    def save_cache(self) -> None:
+        """
+        Save the current state of the server cache to disk.
+        """
         self.cache.save()
 
-    def start_alert_listener(self, error_callback: Callable):
+    def start_alert_listener(self, error_callback: Callable) -> None:
+        """
+        Start listening for Plex server alerts.
+
+        Sets up and starts a listener for various Plex events based on configuration settings.
+
+        Args:
+            error_callback (Callable): Function to call when an error occurs in the listener.
+        """
         trigger_on_play = self.config.get("trigger_on_play")
         trigger_on_scan = self.config.get("trigger_on_scan")
         trigger_on_activity = self.config.get("trigger_on_activity")
@@ -180,7 +355,15 @@ class PlexServer(UnprivilegedPlexServer):
         logger.info("Starting alert listener")
         self._alert_listener.start()
 
-    def get_instance_users(self):
+    def get_instance_users(self) -> List[object]:
+        """
+        Get all users who have access to this Plex server instance.
+
+        Attempts to retrieve users from cache first, then falls back to querying the Plex API.
+
+        Returns:
+            List[object]: A list of user objects with access to this server.
+        """
         users = self.cache.get_instance_users()
         if users is not None:
             return users
@@ -197,10 +380,27 @@ class PlexServer(UnprivilegedPlexServer):
             logger.warning("Unable to retrieve the users of the account, falling back to cache")
             return self.cache.get_instance_users(check_validity=False)
 
-    def get_all_user_ids(self):
+    def get_all_user_ids(self) -> List[str]:
+        """
+        Get IDs of all users with access to this Plex server.
+
+        Returns:
+            List[str]: A list of user IDs, including the current user and all shared users.
+        """
         return [self.user_id] + [user.id for user in self.get_instance_users()]
 
-    def get_plex_instance_of_user(self, user_id: Union[int, str]):
+    def get_plex_instance_of_user(self, user_id: Union[int, str]) -> Optional['UnprivilegedPlexServer']:
+        """
+        Get a Plex server instance authenticated as a specific user.
+
+        Creates a new UnprivilegedPlexServer instance with the specified user's token.
+
+        Args:
+            user_id (Union[int, str]): The ID of the user to authenticate as.
+
+        Returns:
+            Optional[UnprivilegedPlexServer]: A Plex server instance for the specified user, or None if unavailable.
+        """
         if str(self.user_id) == str(user_id):
             return self
         matching_users = [u for u in self.get_instance_users() if str(u.id) == str(user_id)]
@@ -218,7 +418,16 @@ class PlexServer(UnprivilegedPlexServer):
             return None
         return user_plex
 
-    def get_user_from_client_identifier(self, client_identifier: str):
+    def get_user_from_client_identifier(self, client_identifier: str) -> Tuple[Optional[str], Optional[str]]:
+        """
+        Get user information based on a client identifier.
+
+        Args:
+            client_identifier (str): The unique identifier of the client device.
+
+        Returns:
+            Tuple[Optional[str], Optional[str]]: A tuple containing the user ID and username, or (None, None) if not found.
+        """
         plex_sessions = self._plex.sessions()
         current_players = list(itertools.chain.from_iterable([s.players for s in plex_sessions]))
         matching_players = [p for p in current_players if p.machineIdentifier == client_identifier]
@@ -230,19 +439,47 @@ class PlexServer(UnprivilegedPlexServer):
             return (None, None)
         return (user.id, user.name)
 
-    def get_user_by_id(self, user_id: Union[int, str]):
+    def get_user_by_id(self, user_id: Union[int, str]) -> Optional[object]:
+        """
+        Get a user object by their ID.
+
+        Args:
+            user_id (Union[int, str]): The ID of the user to find.
+
+        Returns:
+            Optional[object]: The user object if found, None otherwise.
+        """
         matching_users = [u for u in [self._user] + self.get_instance_users() if str(u.id) == str(user_id)]
         if len(matching_users) == 0:
             return None
         return matching_users[0]
 
-    def should_ignore_show(self, show: Show):
+    def should_ignore_show(self, show: Show) -> bool:
+        """
+        Check if a show should be ignored based on its labels.
+
+        Args:
+            show (Show): The show to check.
+
+        Returns:
+            bool: True if the show should be ignored, False otherwise.
+        """
         for label in show.labels:
             if label.tag and label.tag in self.config.get("ignore_labels"):
                 return True
         return False
 
-    def process_new_or_updated_episode(self, item_id: Union[int, str], event_type: EventType, new: bool):
+    def process_new_or_updated_episode(self, item_id: Union[int, str], event_type: EventType, new: bool) -> None:
+        """
+        Process a newly added or updated episode for all users.
+
+        Applies language preferences for all users who have access to the episode.
+
+        Args:
+            item_id (Union[int, str]): The ID of the episode.
+            event_type (EventType): The type of event that triggered this processing.
+            new (bool): Whether the episode is newly added (True) or updated (False).
+        """
         track_changes = NewOrUpdatedTrackChanges(event_type, new)
         for user_id in self.get_all_user_ids():
             # Switch to the user's Plex instance
@@ -270,7 +507,15 @@ class PlexServer(UnprivilegedPlexServer):
         if track_changes.has_changes:
             self.notify_changes(track_changes)
 
-    def change_tracks(self, username: str, episode: Episode, event_type: EventType):
+    def change_tracks(self, username: str, episode: Episode, event_type: EventType) -> None:
+        """
+        Change audio and subtitle tracks for an episode based on user preferences.
+
+        Args:
+            username (str): The name of the user whose preferences to apply.
+            episode (Episode): The episode to modify.
+            event_type (EventType): The type of event that triggered this change.
+        """
         track_changes = TrackChanges(username, episode, event_type)
         # Get episodes to update
         episodes = track_changes.get_episodes_to_update(self.config.get("update_level"), self.config.get("update_strategy"))
@@ -285,7 +530,13 @@ class PlexServer(UnprivilegedPlexServer):
         if track_changes.has_changes:
             self.notify_changes(track_changes)
 
-    def notify_changes(self, track_changes: Union[TrackChanges, NewOrUpdatedTrackChanges]):
+    def notify_changes(self, track_changes: Union[TrackChanges, NewOrUpdatedTrackChanges]) -> None:
+        """
+        Send notifications about track changes.
+
+        Args:
+            track_changes (Union[TrackChanges, NewOrUpdatedTrackChanges]): The track changes to notify about.
+        """
         logger.info(f"Language update: {track_changes.inline_description}")
         if self.notifier is None:
             return
@@ -295,7 +546,13 @@ class PlexServer(UnprivilegedPlexServer):
         else:
             self.notifier.notify(title, track_changes.description, track_changes.event_type)
 
-    def start_deep_analysis(self):
+    def start_deep_analysis(self) -> None:
+        """
+        Perform a deep analysis of the Plex library.
+
+        Processes recently played media and scans for newly added or updated episodes
+        to apply language preferences.
+        """
         # History
         min_date = datetime.now() - timedelta(days=1)
         history = self._plex.history(mindate=min_date)
@@ -325,6 +582,11 @@ class PlexServer(UnprivilegedPlexServer):
             logger.info(f"[Scheduler] Processing updated episode {self.get_episode_short_name(item)}")
             self.process_new_or_updated_episode(item.key, EventType.SCHEDULER, False)
 
-    def stop(self):
+    def stop(self) -> None:
+        """
+        Stop the Plex server alert listener.
+
+        Gracefully shuts down the alert handler if it's running.
+        """
         if self._alert_handler:
             self._alert_handler.stop()

@@ -14,26 +14,77 @@ logger = get_logger()
 
 
 class PlexPlaying(PlexAlert):
+    """
+    Handles media playback events from Plex server.
+
+    This class processes notifications related to media playback sessions,
+    tracking session states and managing audio/subtitle track selection
+    for TV show episodes.
+
+    Attributes:
+        TYPE (str): The alert type identifier ('playing').
+    """
 
     TYPE = "playing"
 
     @property
-    def client_identifier(self):
+    def client_identifier(self) -> str:
+        """
+        Gets the client identifier from the message.
+
+        Returns:
+            str: The unique identifier of the client device playing the media.
+        """
         return self._message.get("clientIdentifier", None)
 
     @property
-    def item_key(self):
+    def item_key(self) -> str:
+        """
+        Gets the media item key from the message.
+
+        Returns:
+            str: The key identifying the media item in Plex.
+        """
         return self._message.get("key", None)
 
     @property
-    def session_key(self):
+    def session_key(self) -> str:
+        """
+        Gets the session key from the message.
+
+        Returns:
+            str: The unique identifier for the current playback session.
+        """
         return self._message.get("sessionKey", None)
 
     @property
-    def session_state(self):
+    def session_state(self) -> str:
+        """
+        Gets the current state of the playback session.
+
+        Returns:
+            str: The playback state (e.g., 'playing', 'paused', 'stopped').
+        """
         return self._message.get("state", None)
 
-    def process(self, plex: PlexServer):
+    def process(self, plex: 'PlexServer') -> None:
+        """
+        Processes the playback event and manages track selection.
+
+        This method handles media playback events by:
+        1. Identifying the user and their Plex instance
+        2. Verifying the media is a TV show episode
+        3. Tracking session state changes
+        4. Managing session cache when playback stops
+        5. Detecting changes in selected audio/subtitle streams
+        6. Triggering track selection based on user preferences
+
+        Args:
+            plex (PlexServer): The Plex server instance to interact with.
+
+        Returns:
+            None
+        """
         # Get User id and user's Plex instance
         if self.client_identifier not in plex.cache.user_clients:
             user_id, username = plex.get_user_from_client_identifier(self.client_identifier)
