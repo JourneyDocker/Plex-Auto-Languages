@@ -1,7 +1,7 @@
 import signal
 import argparse
 from time import sleep
-from websocket import WebSocketConnectionClosedException
+from websocket import WebSocketConnectionClosedException, WebSocketTimeoutException
 
 from plex_auto_languages.plex_server import PlexServer
 from plex_auto_languages.utils.notifier import Notifier
@@ -11,7 +11,7 @@ from plex_auto_languages.utils.configuration import Configuration
 from plex_auto_languages.utils.healthcheck import HealthcheckServer
 
 # Version information
-__version__ = "1.3.6"
+__version__ = "1.3.7-dev"
 
 class PlexAutoLanguages:
     """
@@ -177,12 +177,14 @@ class PlexAutoLanguages:
         :param error: The exception that occurred.
         """
         if isinstance(error, WebSocketConnectionClosedException):
-            logger.warning("The Plex server closed the websocket connection")
+            logger.warning("WebSocket connection to the Plex server has been closed unexpectedly.")
+        elif isinstance(error, WebSocketTimeoutException):
+            logger.warning("WebSocket connection to the Plex server has timed out.")
         elif isinstance(error, UnicodeDecodeError):
-            logger.debug("Ignoring a websocket payload that could not be decoded")
+            logger.debug("Received a websocket payload that could not be decoded; ignoring it.")
             return
         else:
-            logger.error("Alert listener had an unexpected error")
+            logger.error("An unexpected error occurred in the alert listener.")
             logger.error(error, exc_info=True)
         self.must_stop = True
 
