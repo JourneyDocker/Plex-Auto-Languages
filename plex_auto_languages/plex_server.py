@@ -36,6 +36,10 @@ class UnprivilegedPlexServer():
         _session (requests.Session): HTTP session for making requests to the Plex server.
         _plex_url (str): URL of the Plex server.
         _plex (BasePlexServer): The underlying PlexAPI server instance.
+        _last_connection_check (datetime): Timestamp of the last connection check.
+        _connection_status (bool): Cached connection status.
+        _cached_sections (List): Cached library sections.
+        _sections_cache_time (datetime): When the sections cache was last refreshed.
     """
 
     def __init__(self, url: str, token: str, session: requests.Session = requests.Session()):
@@ -50,31 +54,32 @@ class UnprivilegedPlexServer():
         self._session = session
         self._plex_url = url
         self._plex = self._get_server(url, token, self._session)
+        self._last_connection_check = datetime.fromtimestamp(0)
+        self._connection_status = False
+        self._cached_sections = None
+        self._sections_cache_time = datetime.fromtimestamp(0)
 
     @property
     def connected(self) -> bool:
         """
         Check if the connection to the Plex server is active.
 
-        Attempts to fetch library sections to verify the connection is working.
+        Caches the connection status and library sections for 60 seconds to prevent excessive API calls.
 
         Returns:
             bool: True if connected successfully, False otherwise.
         """
-        if self._plex is None:
-            logger.debug("No Plex instance available (self._plex is None)")
-            return False
-        try:
-            logger.debug("Attempting to fetch library sections from Plex")
-            _ = self._plex.library.sections()
-            logger.debug("Connection verified successfully")
-            return True
-        except (BadRequest, RequestsConnectionError) as e:
-            logger.debug(f"Connection check failed with known exception: {type(e).__name__}: {str(e)}")
-            return False
-        except Exception as e:
-            logger.warning(f"Unexpected error during connection check: {type(e).__name__}: {str(e)}")
-            return False
+        # Return cached status if the check was done recently
+        if datetime.now() - self._last_connection_check < timedelta(seconds=60):
+            logger.debug(f"Using cached connection status: {'Connected' if self._connection_status else 'Disconnected'} (age: {(datetime.now() - self._last_connection_check).total_seconds():.1f}s)")
+            return self._connection_status
+
+        logger.debug("Connection status cache expired, refreshing sections cache")
+        # Refresh sections cache which also updates connection status
+        self._refresh_sections_cache()
+        self._last_connection_check = datetime.now()
+        logger.debug(f"Updated connection status: {'Connected' if self._connection_status else 'Disconnected'}")
+        return self._connection_status
 
     @property
     def unique_id(self) -> str:
@@ -152,6 +157,32 @@ class UnprivilegedPlexServer():
             List[ShowSection]: A list of all TV show library sections.
         """
         return [s for s in self._plex.library.sections() if isinstance(s, ShowSection)]
+
+    def _refresh_sections_cache(self) -> bool:
+        """
+        Refresh the cached library sections.
+
+        Returns:
+            bool: True if refresh was successful, False otherwise.
+        """
+        if self._plex is None:
+            logger.debug("No Plex instance available (self._plex is None)")
+            return False
+
+        try:
+            logger.debug("Refreshing library sections cache")
+            self._cached_sections = self._plex.library.sections()
+            self._sections_cache_time = datetime.now()
+            self._connection_status = True
+            return True
+        except (BadRequest, RequestsConnectionError) as e:
+            logger.debug(f"Failed to refresh sections cache: {type(e).__name__}: {str(e)}")
+            self._connection_status = False
+            return False
+        except Exception as e:
+            logger.warning(f"Unexpected error refreshing sections cache: {type(e).__name__}: {str(e)}")
+            self._connection_status = False
+            return False
 
     @staticmethod
     def get_last_watched_or_first_episode(show: Show) -> Optional[Episode]:
