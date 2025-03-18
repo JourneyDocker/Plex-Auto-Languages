@@ -157,7 +157,7 @@ plex:
 ```yaml
 plexautolanguages:
   update_level: "show"          # Options: "show" (default), "season"
-  update_strategy: "all"        # Options: "all" (default), "next"
+  update_strategy: "all"        # Options: "all", "next" (default)
   trigger_on_play: true         # Update language when playing an episode
   trigger_on_scan: true         # Update language when new files are scanned
   trigger_on_activity: false    # Update language when navigating Plex (experimental)
@@ -189,23 +189,35 @@ debug: false   # Enable debug logs
 
 ### Environment Variable Summary
 
-| Environment Variable      | Default Value             | Description                                                                                                             |
-|---------------------------|---------------------------|-------------------------------------------------------------------------------------------------------------------------|
-| `PLEX_URL`                | *(none)*                  | URL to your Plex server. Replace `IP_ADDRESS` with your actual Plex server address.                                     |
-| `PLEX_TOKEN`              | *(none)*                  | Plex authentication token.                                                                                              |
-| `UPDATE_LEVEL`            | `show`                    | Determines whether the update applies to the entire show or just the current season. Accepted values: `show`, `season`. |
-| `UPDATE_STRATEGY`         | `next`                    | Chooses whether to update all episodes or only the next one. Accepted values: `all`, `next`.                            |
-| `TRIGGER_ON_PLAY`         | `true`                    | If set to true, playing an episode triggers a language update.                                                          |
-| `TRIGGER_ON_SCAN`         | `true`                    | If set to true, scanning for new files triggers a language update.                                                      |
-| `TRIGGER_ON_ACTIVITY`     | `false`                   | If set to true, browsing the Plex library triggers a language update.                                                   |
-| `REFRESH_LIBRARY_ON_SCAN` | `true`                    | Refreshes the cached library when the Plex server scans its library.                                                    |
-| `IGNORE_LABELS`           | `PAL_IGNORE`              | Comma-separated list of Plex labels. Shows with these labels will be ignored.                                           |
-| `SCHEDULER_ENABLE`        | `true`                    | Enables or disables the scheduler feature.                                                                              |
-| `SCHEDULER_SCHEDULE_TIME` | `02:00`                   | Time (in `HH:MM` format) when the scheduler starts its task.                                                            |
-| `DEBUG`                   | `false`                   | Enables debug mode for verbose logging.                                                                                 |
+| Environment Variable            | Default Value | Description                                                                                                                  |
+|---------------------------------|---------------|------------------------------------------------------------------------------------------------------------------------------|
+| `PLEX_URL`                      | *(none)*      | URL to your Plex server. Replace `IP_ADDRESS` with your actual Plex server address.                                          |
+| `PLEX_TOKEN`                    | *(none)*      | Plex authentication token.                                                                                                   |
+| `UPDATE_LEVEL`                  | `show`        | Determines whether the update applies to the entire show or just the current season. Accepted values: `show`, `season`.      |
+| `UPDATE_STRATEGY`               | `next`        | Chooses whether to update all episodes or only the next one. Accepted values: `all`, `next`.                                 |
+| `TRIGGER_ON_PLAY`               | `true`        | If set to true, playing an episode triggers a language update.                                                               |
+| `TRIGGER_ON_SCAN`               | `true`        | If set to true, scanning for new files triggers a language update.                                                           |
+| `TRIGGER_ON_ACTIVITY`           | `false`       | If set to true, browsing the Plex library triggers a language update.                                                        |
+| `REFRESH_LIBRARY_ON_SCAN`       | `true`        | Refreshes the cached library when the Plex server scans its library.                                                         |
+| `IGNORE_LABELS`                 | `PAL_IGNORE`  | Comma-separated list of Plex labels. Shows with these labels will be ignored.                                                |
+| `SCHEDULER_ENABLE`              | `true`        | Enables or disables the scheduler feature.                                                                                   |
+| `SCHEDULER_SCHEDULE_TIME`       | `02:00`       | Time (in `HH:MM` format) when the scheduler starts its task.                                                                 |
+| `NOTIFICATIONS_ENABLE`          | `false`       | Enables or disables notifications.                                                                                           |
+| `NOTIFICATIONS_APPRISE_CONFIGS` | `[]`          | JSON array of Apprise notification configurations. See Apprise docs for more information: https://github.com/caronc/apprise. |
+| `DEBUG`                         | `false`       | Enables debug mode for verbose logging.                                                                                      |
 
 > [!NOTE]
 > The Plex Token can also be provided as a Docker secret, the filepath of the secret must then be specified in the environment variable `PLEX_TOKEN_FILE` which defaults to `/run/secrets/plex_token`.
+
+> [!NOTE]
+> The `NOTIFICATIONS_APPRISE_CONFIGS` Environment Variable should be set as a JSON string representing an array of notification configurations. Each configuration can include `urls`, `users`, and `events` as needed. For example:
+> ```json
+> [
+>   {"urls": ["discord://webhook_id/webhook_token"]},
+>   {"urls": ["gotify://hostname/token"], "users": ["MyUser1", "MyUser2"]},
+>   {"urls": ["tgram://bottoken/ChatID"], "users": ["MyUser3"], "events": ["play_or_activity"]}
+> ]
+> ```
 
 ## License
 
