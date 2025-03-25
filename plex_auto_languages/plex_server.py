@@ -64,21 +64,28 @@ class UnprivilegedPlexServer():
         """
         Check if the connection to the Plex server is active.
 
-        Caches the connection status and library sections for 60 seconds to prevent excessive API calls.
+        Caches the connection status for 2 minutes to prevent excessive API calls.
 
         Returns:
             bool: True if connected successfully, False otherwise.
         """
-        # Return cached status if the check was done recently
-        if datetime.now() - self._last_connection_check < timedelta(seconds=60):
-            logger.debug(f"Using cached connection status: {'Connected' if self._connection_status else 'Disconnected'} (age: {(datetime.now() - self._last_connection_check).total_seconds():.1f}s)")
+        # Early return if no Plex instance is available
+        if self._plex is None:
+            logger.debug("No Plex instance available")
+            return False
+
+        # Use cached status if it's recent enough
+        cache_age = datetime.now() - self._last_connection_check
+        if cache_age < timedelta(minutes=2):
+            logger.debug(f"Using cached connection status: {'Connected' if self._connection_status else 'Disconnected'} "
+                         f"(cache age: {cache_age.total_seconds():.1f}s)")
             return self._connection_status
 
-        logger.debug("Connection status cache expired, refreshing sections cache")
-        # Refresh sections cache which also updates connection status
+        # Refresh connection status
+        logger.debug("Connection status cache expired, refreshing")
         self._refresh_sections_cache()
         self._last_connection_check = datetime.now()
-        logger.debug(f"Updated connection status: {'Connected' if self._connection_status else 'Disconnected'}")
+        logger.debug(f"Connection status: {'Connected' if self._connection_status else 'Disconnected'}")
         return self._connection_status
 
     @property
@@ -165,12 +172,7 @@ class UnprivilegedPlexServer():
         Returns:
             bool: True if refresh was successful, False otherwise.
         """
-        if self._plex is None:
-            logger.debug("No Plex instance available (self._plex is None)")
-            return False
-
         try:
-            logger.debug("Refreshing library sections cache")
             self._cached_sections = self._plex.library.sections()
             self._sections_cache_time = datetime.now()
             self._connection_status = True
