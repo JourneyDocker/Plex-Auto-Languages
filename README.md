@@ -91,6 +91,7 @@ services:
       - TZ=Europe/Paris
     volumes:
       - ./config:/config
+    network_mode: service:plex # if you also run Plex using docker compose
 ```
 
 **Run with Docker CLI:**
@@ -103,6 +104,8 @@ docker run -d \
   -e PLEX_TOKEN=MY_PLEX_TOKEN \
   -e TZ=Europe/Paris \
   -v ./config:/config \
+  --net container:plex \ # if you also run Plex in a docker container
+  -
   journeyover/plex-auto-languages:main
 ```
 
