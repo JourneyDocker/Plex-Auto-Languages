@@ -45,6 +45,7 @@ class PlexStatus(PlexAlert):
         2. Processing newly added episodes for all users
         3. Processing updated episodes for all users
         4. Applying appropriate track selection based on user preferences
+        5. Skipping items from ignored libraries
 
         Args:
             plex (PlexServer): The Plex server instance to interact with.
@@ -66,6 +67,11 @@ class PlexStatus(PlexAlert):
         if len(added) > 0:
             logger.debug(f"[Status] Found {len(added)} newly added episode(s)")
             for item in added:
+                # Check if the library should be ignored
+                if plex.should_ignore_library(item.librarySectionTitle):
+                    logger.debug(f"[Status] Ignoring episode {plex.get_episode_short_name(item)} due to ignored library: '{item.librarySectionTitle}'")
+                    continue
+
                 # Check if the item should be ignored
                 if plex.should_ignore_show(item.show()):
                     continue
@@ -82,6 +88,11 @@ class PlexStatus(PlexAlert):
         if len(updated) > 0:
             logger.debug(f"[Status] Found {len(updated)} updated episode(s)")
             for item in updated:
+                # Check if the library should be ignored
+                if plex.should_ignore_library(item.librarySectionTitle):
+                    logger.debug(f"[Status] Ignoring episode {plex.get_episode_short_name(item)} due to ignored library: '{item.librarySectionTitle}'")
+                    continue
+
                 # Check if the item should be ignored
                 if plex.should_ignore_show(item.show()):
                     continue

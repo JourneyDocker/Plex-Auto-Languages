@@ -120,6 +120,11 @@ class PlexActivity(PlexAlert):
         if item is None or not isinstance(item, Episode):
             return
 
+        # Skip if the library or show should be ignored
+        if plex.should_ignore_library(item.librarySectionTitle):
+            logger.debug(f"[Activity] Ignoring episode {item} due to ignored library: '{item.librarySectionTitle}'")
+            return
+
         # Skip if the show should be ignored
         if plex.should_ignore_show(item.show()):
             logger.debug(f"[Activity] Ignoring episode {item} due to Plex show labels")

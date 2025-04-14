@@ -7,6 +7,8 @@ plexautolanguages:
   refresh_library_on_scan: true
   ignore_labels:
     - PAL_IGNORE
+  ignore_libraries:
+    - ""
 
   plex:
     url: ""

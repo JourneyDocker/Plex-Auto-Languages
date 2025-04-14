@@ -201,12 +201,21 @@ class Configuration:
         """
         Performs post-processing on loaded configuration values.
 
-        Currently handles converting comma-separated string lists to actual lists
-        for the ignore_labels configuration parameter.
+        Converts comma-separated string values to lists for specific configuration
+        parameters. Currently handles:
+        - ignore_labels: Labels to be ignored during processing
+        - ignore_libraries: Libraries to be ignored during processing
+
+        These values may come from config files or environment variables as strings,
+        and this method ensures they're properly converted to Python lists.
         """
         ignore_labels_config = self.get("ignore_labels")
         if isinstance(ignore_labels_config, str):
             self._config["ignore_labels"] = ignore_labels_config.split(",")
+
+        ignore_libraries_config = self.get("ignore_libraries")
+        if isinstance(ignore_libraries_config, str):
+            self._config["ignore_libraries"] = ignore_libraries_config.split(",")
 
     def _validate_config(self):
         """
@@ -232,6 +241,9 @@ class Configuration:
             raise InvalidConfiguration
         if not isinstance(self.get("ignore_labels"), list):
             logger.error("The 'ignore_labels' parameter must be a list or a string-based comma separated list")
+            raise InvalidConfiguration
+        if not isinstance(self.get("ignore_libraries"), list):
+            logger.error("The 'ignore_libraries' parameter must be a list or a string-based comma separated list")
             raise InvalidConfiguration
         if self.get("scheduler.enable") and not re.match(r"^\d{2}:\d{2}$", self.get("scheduler.schedule_time")):
             logger.error("A valid 'schedule_time' parameter with the format 'HH:MM' is required (ex: 02:30)")

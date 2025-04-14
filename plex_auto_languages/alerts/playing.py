@@ -74,10 +74,11 @@ class PlexPlaying(PlexAlert):
         This method handles media playback events by:
         1. Identifying the user and their Plex instance
         2. Verifying the media is a TV show episode
-        3. Tracking session state changes
-        4. Managing session cache when playback stops
-        5. Detecting changes in selected audio/subtitle streams
-        6. Triggering track selection based on user preferences
+        3. Checking if the library or show should be ignored
+        4. Tracking session state changes
+        5. Managing session cache when playback stops
+        6. Detecting changes in selected audio/subtitle streams
+        7. Triggering track selection based on user preferences
 
         Args:
             plex (PlexServer): The Plex server instance to interact with.
@@ -100,6 +101,11 @@ class PlexPlaying(PlexAlert):
         # Skip if not an Episode
         item = user_plex.fetch_item(self.item_key)
         if item is None or not isinstance(item, Episode):
+            return
+
+        # Skip if the library should be ignored
+        if plex.should_ignore_library(item.librarySectionTitle):
+            logger.debug(f"[Play Session] Ignoring episode {item} due to ignored library: '{item.librarySectionTitle}'")
             return
 
         # Skip if the show should be ignored

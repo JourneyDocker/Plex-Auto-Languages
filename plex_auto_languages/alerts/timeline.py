@@ -95,9 +95,10 @@ class PlexTimeline(PlexAlert):
         This method handles timeline events by:
         1. Filtering out irrelevant events (metadata/media state changes, non-library events)
         2. Verifying the media is a TV show episode
-        3. Checking if the episode was recently added
-        4. Ensuring the episode hasn't already been processed
-        5. Triggering track selection for all users based on their preferences
+        3. Checking if the library or show should be ignored
+        4. Checking if the episode was recently added
+        5. Ensuring the episode hasn't already been processed
+        6. Triggering track selection for all users based on their preferences
 
         Args:
             plex (PlexServer): The Plex server instance to interact with.
@@ -113,6 +114,11 @@ class PlexTimeline(PlexAlert):
         # Skip if not an Episode
         item = plex.fetch_item(self.item_id)
         if item is None or not isinstance(item, Episode):
+            return
+
+        # Skip if the library should be ignored
+        if plex.should_ignore_library(item.librarySectionTitle):
+            logger.debug(f"[Timeline] Ignoring episode {item} due to ignored library: '{item.librarySectionTitle}'")
             return
 
         # Skip if the show should be ignored

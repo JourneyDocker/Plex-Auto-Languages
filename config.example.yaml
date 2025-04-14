@@ -33,6 +33,10 @@ plexautolanguages:
   ignore_labels:
     - PAL_IGNORE
 
+  # List of library names that PAL will ignore when updating subtitle/audio languages
+  ignore_libraries:
+    - ""
+
   # Plex configuration
   plex:
     # A valid Plex URL (required)

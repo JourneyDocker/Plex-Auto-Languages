@@ -133,16 +133,26 @@ class UnprivilegedPlexServer():
 
     def episodes(self) -> List[Episode]:
         """
-        Get all episodes from the Plex server.
+        Get all episodes from non-ignored libraries in the Plex server.
 
         Returns:
-            List[Episode]: A list of all episodes in the Plex library.
+            List[Episode]: A list of all episodes in non-ignored Plex libraries.
         """
-        return self._plex.library.all(libtype="episode", container_size=1000)
+        if hasattr(self, 'should_ignore_library'):
+            # For PlexServer instances that have the should_ignore_library method
+            non_ignored_sections = self.get_show_sections()
+            episodes = []
+            for section in non_ignored_sections:
+                section_episodes = section.all(libtype="episode", container_size=1000)
+                episodes.extend(section_episodes)
+            return episodes
+        else:
+            # For UnprivilegedPlexServer instances or fallback
+            return self._plex.library.all(libtype="episode", container_size=1000)
 
     def get_recently_added_episodes(self, minutes: int) -> List[Episode]:
         """
-        Get episodes that were recently added to the Plex server.
+        Get episodes that were recently added to non-ignored Plex libraries.
 
         Args:
             minutes (int): Number of minutes to look back for recently added episodes.
@@ -158,12 +168,13 @@ class UnprivilegedPlexServer():
 
     def get_show_sections(self) -> List[ShowSection]:
         """
-        Get all TV show sections from the Plex library.
+        Get all TV show sections from the Plex library that are not ignored.
 
         Returns:
-            List[ShowSection]: A list of all TV show library sections.
+            List[ShowSection]: A list of all non-ignored TV show library sections.
         """
-        return [s for s in self._plex.library.sections() if isinstance(s, ShowSection)]
+        all_sections = [s for s in self._plex.library.sections() if isinstance(s, ShowSection)]
+        return [s for s in all_sections if not self.should_ignore_library(s.title)]
 
     def _refresh_sections_cache(self) -> bool:
         """
@@ -487,9 +498,21 @@ class PlexServer(UnprivilegedPlexServer):
             return None
         return matching_users[0]
 
+    def should_ignore_library(self, section_title: str) -> bool:
+        """
+        Check if a library section should be ignored based on its name.
+
+        Args:
+            section_title (str): The title of the library section to check.
+
+        Returns:
+            bool: True if the library should be ignored, False otherwise.
+        """
+        return section_title in self.config.get("ignore_libraries")
+
     def should_ignore_show(self, show: Show) -> bool:
         """
-        Check if a show should be ignored based on its labels.
+        Check if a show should be ignored based on its labels or its library.
 
         Args:
             show (Show): The show to check.
@@ -497,6 +520,11 @@ class PlexServer(UnprivilegedPlexServer):
         Returns:
             bool: True if the show should be ignored, False otherwise.
         """
+        # Check if the show's library should be ignored
+        if self.should_ignore_library(show.librarySectionTitle):
+            return True
+
+        # Check if the show has labels that should be ignored
         for label in show.labels:
             if label.tag and label.tag in self.config.get("ignore_labels"):
                 return True
@@ -584,12 +612,16 @@ class PlexServer(UnprivilegedPlexServer):
         Perform a deep analysis of the Plex library.
 
         Processes recently played media and scans for newly added or updated episodes
-        to apply language preferences.
+        to apply language preferences. Ignores items from libraries that are configured
+        to be excluded.
         """
         # History
         min_date = datetime.now() - timedelta(days=1)
         history = self._plex.history(mindate=min_date)
         for episode in [media for media in history if isinstance(media, Episode)]:
+            # Skip if library should be ignored
+            if self.should_ignore_library(episode.librarySectionTitle):
+                continue
             user = self.get_user_by_id(episode.accountID)
             if user is None:
                 continue
@@ -601,6 +633,8 @@ class PlexServer(UnprivilegedPlexServer):
         # Scan library
         added, updated = self.cache.refresh_library_cache()
         for item in added:
+            if self.should_ignore_library(item.librarySectionTitle):
+                continue
             if self.should_ignore_show(item.show()):
                 continue
             if not self.cache.should_process_recently_added(item.key, item.addedAt):
@@ -608,6 +642,8 @@ class PlexServer(UnprivilegedPlexServer):
             logger.info(f"[Scheduler] Processing newly added episode {self.get_episode_short_name(item)}")
             self.process_new_or_updated_episode(item.key, EventType.SCHEDULER, True)
         for item in updated:
+            if self.should_ignore_library(item.librarySectionTitle):
+                continue
             if self.should_ignore_show(item.show()):
                 continue
             if not self.cache.should_process_recently_updated(item.key):
