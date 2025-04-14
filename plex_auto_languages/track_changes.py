@@ -340,7 +340,8 @@ class TrackChanges():
         Find the best matching subtitle stream from a list of available streams.
 
         Matches based on language code, forced flag, hearing impaired flag,
-        codec, and title similarity to the reference subtitle stream.
+        codec, and title similarity (across title, displayTitle, and extendedDisplayTitle)
+        to the reference subtitle stream.
 
         Args:
             subtitle_streams (List[SubtitleStream]): The list of available subtitle streams.
@@ -373,9 +374,20 @@ class TrackChanges():
         if len(streams) == 1:
             return streams[0]
 
+        # Helper function to get the most specific title available
+        def get_stream_title(stream):
+            return (stream.extendedDisplayTitle or
+                   stream.displayTitle or
+                   stream.title or "").lower()
+
+        # Get reference stream title
+        ref_title = get_stream_title(self._subtitle_stream)
+
         # Score the remaining streams based on attributes
         scores = [0] * len(streams)
         for index, stream in enumerate(streams):
+            current_title = get_stream_title(stream)
+
             if self._subtitle_stream.forced == stream.forced:
                 scores[index] += 3
             if self._subtitle_stream.hearingImpaired == stream.hearingImpaired:  # Add score for SDH subtitles
@@ -383,23 +395,24 @@ class TrackChanges():
             if self._subtitle_stream.codec is not None and stream.codec is not None and \
                     self._subtitle_stream.codec == stream.codec:
                 scores[index] += 1
+
+            # Match titles across all title fields
+            if ref_title == current_title:
+                scores[index] += 5
+
+            # Individual title field matching
             if self._subtitle_stream.title is not None and stream.title is not None and \
                     self._subtitle_stream.title == stream.title:
-                scores[index] += 5
-            # fix for badly labeled subs -> try break tied scores by ID match
-            # e.g. 0: eng, 1: eng (unflagged forced)
-            # todo this doesnt work, ids are not indexes, they're uids
-            # we'll need to map self's ids to indexes
-            # logger.debug(f"[Special] Checking subtitle IDs "
-            #              f"current {self._subtitle_stream.id} stream '{stream.id:}'")
-            # if self._subtitle_stream.title is not None and stream.title is not None and \
-            #         self._subtitle_stream.id == stream.id:
-            #     logger.debug(f"[Special] Matched subtitle IDs "
-            #              f"current {self._subtitle_stream.title} stream '{stream.title:}'")
-            #     scores[index] += 1
+                scores[index] += 3
+            if self._subtitle_stream.displayTitle is not None and stream.displayTitle is not None and \
+                    self._subtitle_stream.displayTitle == stream.displayTitle:
+                scores[index] += 3
+            if self._subtitle_stream.extendedDisplayTitle is not None and stream.extendedDisplayTitle is not None and \
+                    self._subtitle_stream.extendedDisplayTitle == stream.extendedDisplayTitle:
+                scores[index] += 3
 
         # Logging for debugging
-        logger.debug(f"Scores: {scores}, Streams: {streams}")
+        logger.debug(f"Subtitle scores: {scores}, Streams: {streams}")
         return streams[scores.index(max(scores))]
 
     @staticmethod
