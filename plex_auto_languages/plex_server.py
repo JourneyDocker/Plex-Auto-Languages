@@ -650,6 +650,7 @@ class PlexServer(UnprivilegedPlexServer):
                 continue
             logger.info(f"[Scheduler] Processing updated episode {self.get_episode_short_name(item)}")
             self.process_new_or_updated_episode(item.key, EventType.SCHEDULER, False)
+        logger.info("[Scheduler] Deep analysis completed")
 
     def stop(self) -> None:
         """

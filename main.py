@@ -312,7 +312,7 @@ class PlexAutoLanguages:
         """
         if self.plex is None or not self.plex.is_alive:
             return
-        logger.info("Running scheduled task")
+        logger.info("[Scheduler] Deep analysis started")
         self.plex.start_deep_analysis()
 
 if __name__ == "__main__":
