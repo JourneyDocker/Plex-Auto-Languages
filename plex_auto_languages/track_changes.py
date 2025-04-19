@@ -282,15 +282,18 @@ class TrackChanges():
         # The reference stream can be 'None'
         if self._audio_stream is None:
             return None
+
         # We only want streams with the same language code
         streams = [s for s in audio_streams if s.languageCode == self._audio_stream.languageCode]
-        # if streams aren't differentiated, set ambiguous flag
+        # Check if streams aren't differentiated
         ambiguous = all(s.title == audio_streams[0].title for s in audio_streams)
+
         def get_stream_title(stream):
             """Helper function to get the most specific title available"""
             return (stream.extendedDisplayTitle or
-                   stream.displayTitle or
-                   stream.title or "").lower()
+                    stream.displayTitle or
+                    stream.title or "").lower()
+
         def contains_descriptive_terms(title):
             """Check if the title contains terms indicating a descriptive track"""
             descriptive_terms = [
@@ -298,8 +301,10 @@ class TrackChanges():
                 "narration", "narrative", "described"
             ]
             return any(term in title for term in descriptive_terms)
+
         # Get reference stream title
         ref_title = get_stream_title(self._audio_stream)
+
         # Filter streams based on descriptive terms
         if contains_descriptive_terms(ref_title):
             # Keep only descriptive tracks if reference is descriptive
@@ -307,14 +312,16 @@ class TrackChanges():
         else:
             # Filter out descriptive tracks if reference is not descriptive
             streams = [s for s in streams if not contains_descriptive_terms(get_stream_title(s))]
+
         if len(streams) == 0:
             return None
+
         if len(streams) == 1:
             return streams[0]
+
         # If multiple streams match, order them based on a score
         scores = [0] * len(streams)
         for index, stream in enumerate(streams):
-            current_title = get_stream_title(stream)
             # Codec match
             if self._audio_stream.codec == stream.codec:
                 scores[index] += 5
@@ -330,9 +337,19 @@ class TrackChanges():
                 else:
                     if self._audio_stream.channels <= stream.channels:
                         scores[index] += 1
-            # Title matching across all title fields
-            if ref_title == current_title:
+            # Individual title field matching
+#            if self._audio_stream.extendedDisplayTitle is not None and stream.extendedDisplayTitle is not None and \
+#                    self._audio_stream.extendedDisplayTitle == stream.extendedDisplayTitle:
+#                scores[index] += 5
+#            if self._audio_stream.displayTitle is not None and stream.displayTitle is not None and \
+#                    self._audio_stream.displayTitle == stream.displayTitle:
+#                scores[index] += 5
+            if self._audio_stream.title is not None and stream.title is not None and \
+                    self._audio_stream.title == stream.title:
                 scores[index] += 5
+
+        # Logging for debugging
+        logger.debug(f"Audio scores: {scores}, Streams: {streams}")
         return streams[scores.index(max(scores))]
 
     def _match_subtitle_stream(self, subtitle_streams: List[SubtitleStream]) -> Optional[SubtitleStream]:
@@ -340,8 +357,7 @@ class TrackChanges():
         Find the best matching subtitle stream from a list of available streams.
 
         Matches based on language code, forced flag, hearing impaired flag,
-        codec, and title similarity (across title, displayTitle, and extendedDisplayTitle)
-        to the reference subtitle stream.
+        codec, and title similarity to the reference subtitle stream.
 
         Args:
             subtitle_streams (List[SubtitleStream]): The list of available subtitle streams.
@@ -374,20 +390,9 @@ class TrackChanges():
         if len(streams) == 1:
             return streams[0]
 
-        # Helper function to get the most specific title available
-        def get_stream_title(stream):
-            return (stream.extendedDisplayTitle or
-                   stream.displayTitle or
-                   stream.title or "").lower()
-
-        # Get reference stream title
-        ref_title = get_stream_title(self._subtitle_stream)
-
         # Score the remaining streams based on attributes
         scores = [0] * len(streams)
         for index, stream in enumerate(streams):
-            current_title = get_stream_title(stream)
-
             if self._subtitle_stream.forced == stream.forced:
                 scores[index] += 3
             if self._subtitle_stream.hearingImpaired == stream.hearingImpaired:  # Add score for SDH subtitles
@@ -396,20 +401,17 @@ class TrackChanges():
                     self._subtitle_stream.codec == stream.codec:
                 scores[index] += 1
 
-            # Match titles across all title fields
-            if ref_title == current_title:
-                scores[index] += 5
-
             # Individual title field matching
+#            if self._subtitle_stream.extendedDisplayTitle is not None and stream.extendedDisplayTitle is not None and \
+#                    self._subtitle_stream.extendedDisplayTitle == stream.extendedDisplayTitle:
+#                scores[index] += 5
+#            if self._subtitle_stream.displayTitle is not None and stream.displayTitle is not None and \
+#                    self._subtitle_stream.displayTitle == stream.displayTitle:
+#                scores[index] += 5
             if self._subtitle_stream.title is not None and stream.title is not None and \
                     self._subtitle_stream.title == stream.title:
-                scores[index] += 3
-            if self._subtitle_stream.displayTitle is not None and stream.displayTitle is not None and \
-                    self._subtitle_stream.displayTitle == stream.displayTitle:
-                scores[index] += 3
-            if self._subtitle_stream.extendedDisplayTitle is not None and stream.extendedDisplayTitle is not None and \
-                    self._subtitle_stream.extendedDisplayTitle == stream.extendedDisplayTitle:
-                scores[index] += 3
+                scores[index] += 5
+
 
         # Logging for debugging
         logger.debug(f"Subtitle scores: {scores}, Streams: {streams}")
