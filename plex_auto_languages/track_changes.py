@@ -270,8 +270,8 @@ class TrackChanges():
         """
         Find the best matching audio stream from a list of available streams.
 
-        Matches based on language code, descriptive terms, codec, channel layout,
-        and title similarity to the reference audio stream.
+        Matches based on language code, descriptive terms, visual impaired flag, codec,
+        channel layout, and title similarity to the reference audio stream.
 
         Args:
             audio_streams (List[AudioStream]): The list of available audio streams.
@@ -305,13 +305,35 @@ class TrackChanges():
         # Get reference stream title
         ref_title = get_stream_title(self._audio_stream)
 
-        # Filter streams based on descriptive terms
+        # First, try to match visualImpaired flag if available
+        try:
+            # Check if the reference is a visual impaired track
+            if hasattr(self._audio_stream, 'visualImpaired') and self._audio_stream.visualImpaired:
+                # Keep only visual impaired tracks
+                visual_impaired_streams = [s for s in streams if hasattr(s, 'visualImpaired') and s.visualImpaired]
+                if visual_impaired_streams:
+                    streams = visual_impaired_streams
+            else:
+                # Filter out visual impaired tracks if reference is not visual impaired
+                non_visual_impaired_streams = [s for s in streams if not (hasattr(s, 'visualImpaired') and s.visualImpaired)]
+                if non_visual_impaired_streams:
+                    streams = non_visual_impaired_streams
+        except (AttributeError, TypeError):
+            # Fall back to descriptive terms if visualImpaired attribute is not available
+            #logger.debug("visualImpaired attribute not available, falling back to title-based detection")
+            pass
+
+        # Fallback to descriptive terms in title
         if contains_descriptive_terms(ref_title):
             # Keep only descriptive tracks if reference is descriptive
-            streams = [s for s in streams if contains_descriptive_terms(get_stream_title(s))]
+            descriptive_streams = [s for s in streams if contains_descriptive_terms(get_stream_title(s))]
+            if descriptive_streams:
+                streams = descriptive_streams
         else:
             # Filter out descriptive tracks if reference is not descriptive
-            streams = [s for s in streams if not contains_descriptive_terms(get_stream_title(s))]
+            non_descriptive_streams = [s for s in streams if not contains_descriptive_terms(get_stream_title(s))]
+            if non_descriptive_streams:
+                streams = non_descriptive_streams
 
         if len(streams) == 0:
             return None
@@ -337,13 +359,14 @@ class TrackChanges():
                 else:
                     if self._audio_stream.channels <= stream.channels:
                         scores[index] += 1
+
             # Individual title field matching
-#            if self._audio_stream.extendedDisplayTitle is not None and stream.extendedDisplayTitle is not None and \
-#                    self._audio_stream.extendedDisplayTitle == stream.extendedDisplayTitle:
-#                scores[index] += 5
-#            if self._audio_stream.displayTitle is not None and stream.displayTitle is not None and \
-#                    self._audio_stream.displayTitle == stream.displayTitle:
-#                scores[index] += 5
+            #if self._audio_stream.extendedDisplayTitle is not None and stream.extendedDisplayTitle is not None and \
+            #        self._audio_stream.extendedDisplayTitle == stream.extendedDisplayTitle:
+            #    scores[index] += 5
+            #if self._audio_stream.displayTitle is not None and stream.displayTitle is not None and \
+            #        self._audio_stream.displayTitle == stream.displayTitle:
+            #    scores[index] += 5
             if self._audio_stream.title is not None and stream.title is not None and \
                     self._audio_stream.title == stream.title:
                 scores[index] += 5
@@ -402,12 +425,12 @@ class TrackChanges():
                 scores[index] += 1
 
             # Individual title field matching
-#            if self._subtitle_stream.extendedDisplayTitle is not None and stream.extendedDisplayTitle is not None and \
-#                    self._subtitle_stream.extendedDisplayTitle == stream.extendedDisplayTitle:
-#                scores[index] += 5
-#            if self._subtitle_stream.displayTitle is not None and stream.displayTitle is not None and \
-#                    self._subtitle_stream.displayTitle == stream.displayTitle:
-#                scores[index] += 5
+            #if self._subtitle_stream.extendedDisplayTitle is not None and stream.extendedDisplayTitle is not None and \
+            #        self._subtitle_stream.extendedDisplayTitle == stream.extendedDisplayTitle:
+            #    scores[index] += 5
+            #if self._subtitle_stream.displayTitle is not None and stream.displayTitle is not None and \
+            #        self._subtitle_stream.displayTitle == stream.displayTitle:
+            #    scores[index] += 5
             if self._subtitle_stream.title is not None and stream.title is not None and \
                     self._subtitle_stream.title == stream.title:
                 scores[index] += 5
