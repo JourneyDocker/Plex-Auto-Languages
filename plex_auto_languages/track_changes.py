@@ -416,25 +416,25 @@ class TrackChanges():
         # Score the remaining streams based on attributes
         scores = [0] * len(streams)
         for index, stream in enumerate(streams):
-            if self._subtitle_stream.forced == stream.forced:
-                scores[index] += 3
-            if self._subtitle_stream.hearingImpaired == stream.hearingImpaired:  # Add score for SDH subtitles
-                scores[index] += 3
-            if self._subtitle_stream.codec is not None and stream.codec is not None and \
-                    self._subtitle_stream.codec == stream.codec:
-                scores[index] += 1
+            if self._subtitle_stream is not None:
+                if self._subtitle_stream.forced == stream.forced:
+                    scores[index] += 3
+                if self._subtitle_stream.hearingImpaired == stream.hearingImpaired:
+                    scores[index] += 3
+                if self._subtitle_stream.codec is not None and stream.codec is not None and \
+                        self._subtitle_stream.codec == stream.codec:
+                    scores[index] += 1
 
-            # Individual title field matching
-            #if self._subtitle_stream.extendedDisplayTitle is not None and stream.extendedDisplayTitle is not None and \
-            #        self._subtitle_stream.extendedDisplayTitle == stream.extendedDisplayTitle:
-            #    scores[index] += 5
-            #if self._subtitle_stream.displayTitle is not None and stream.displayTitle is not None and \
-            #        self._subtitle_stream.displayTitle == stream.displayTitle:
-            #    scores[index] += 5
-            if self._subtitle_stream.title is not None and stream.title is not None and \
-                    self._subtitle_stream.title == stream.title:
-                scores[index] += 5
-
+                # Individual title field matching
+                #if self._subtitle_stream.extendedDisplayTitle is not None and stream.extendedDisplayTitle is not None and \
+                #        self._subtitle_stream.extendedDisplayTitle == stream.extendedDisplayTitle:
+                #    scores[index] += 5
+                #if self._subtitle_stream.displayTitle is not None and stream.displayTitle is not None and \
+                #        self._subtitle_stream.displayTitle == stream.displayTitle:
+                #    scores[index] += 5
+                if self._subtitle_stream.title is not None and stream.title is not None and \
+                        self._subtitle_stream.title == stream.title:
+                    scores[index] += 5
 
         # Logging for debugging
         logger.debug(f"Subtitle scores: {scores}, Streams: {streams}")
