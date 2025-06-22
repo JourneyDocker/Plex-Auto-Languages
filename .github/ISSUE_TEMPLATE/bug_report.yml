@@ -30,6 +30,9 @@ body:
       2. With this config...
       3. Run '...'
       4. See error...
+
+      If providing any docker compose/run commands, please use the code block format to ensure it is more readable.
+      To format your code, use three backticks (```) before and after the code block.
   validations:
     required: false
 - type: textarea
@@ -56,6 +59,7 @@ body:
     label: Logs
     description: |
       Please provide your full log related to this issue.
+    render: markdown
   validations:
     required: true
 - type: textarea
