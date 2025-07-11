@@ -1,5 +1,7 @@
 from __future__ import annotations
 from typing import Callable, Optional
+import ssl
+from urllib.parse import urlparse
 from websocket import WebSocketApp
 from plexapi.alert import AlertListener
 from plexapi.server import PlexServer as BasePlexServer
@@ -51,4 +53,16 @@ class PlexAlertListener(AlertListener):
         """
         url = self._server.url(self.key, includeToken=True).replace("http", "ws")
         self._ws = WebSocketApp(url, on_message=self._onMessage, on_error=self._onError)
-        self._ws.run_forever(skip_utf8_validation=True)
+        
+        ssl_opts = {}
+        if url.startswith("wss://"):
+            # This disables SSL certificate verification for the whitelisted Plex server,
+            # which is useful for local Plex servers using self-signed certificates.
+            plex_hostname = urlparse(self._server._baseurl).hostname
+            ssl_opts = {
+                "cert_reqs": ssl.CERT_NONE,
+                "check_hostname": False,
+                "server_hostname": plex_hostname
+            }
+
+        self._ws.run_forever(skip_utf8_validation=True, sslopt=ssl_opts)
