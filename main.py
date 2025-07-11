@@ -11,7 +11,7 @@ from plex_auto_languages.utils.configuration import Configuration
 from plex_auto_languages.utils.healthcheck import HealthcheckServer
 
 # Version information
-__version__ = "1.3.9"
+__version__ = "1.3.10-dev1"
 
 class PlexAutoLanguages:
     """
