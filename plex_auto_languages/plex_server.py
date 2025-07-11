@@ -1,9 +1,12 @@
 import time
 import requests
 import itertools
+import warnings
+from urllib.parse import urlparse
 from typing import Union, Callable, List, Tuple, Optional
 from datetime import datetime, timedelta
 from requests import ConnectionError as RequestsConnectionError
+from urllib3.exceptions import InsecureRequestWarning
 from plexapi.media import MediaPart
 from plexapi.library import ShowSection
 from plexapi.video import Episode, Show
@@ -22,6 +25,25 @@ from plex_auto_languages.exceptions import UserNotFound
 
 
 logger = get_logger()
+
+
+class SelectiveVerifySession(requests.Session):
+    whitelist = set()
+
+    def __init__(self, whitelist=None):
+        super().__init__()
+        self.whitelist = set(whitelist or [])
+
+    def request(self, method, url, *_, **kwargs):
+        domain = urlparse(url).hostname
+        # Disable SSL verification for whitelisted domains
+        if domain in self.whitelist:
+            kwargs["verify"] = False
+            # Suppress SSL warnings
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore", InsecureRequestWarning)
+                return super().request(method, url, **kwargs)
+        return super().request(method, url, *_, **kwargs)
 
 
 class UnprivilegedPlexServer():
@@ -286,7 +308,12 @@ class PlexServer(UnprivilegedPlexServer):
         Raises:
             UserNotFound: If the user associated with the provided token cannot be found.
         """
-        super().__init__(url, token)
+        parsed_url = urlparse(url)
+        session = requests.Session()
+        if parsed_url.scheme == "https":
+            session = SelectiveVerifySession(whitelist=[parsed_url.hostname])
+        
+        super().__init__(url, token, session=session)
         self.notifier = notifier
         self.config = config
         self._user = self._get_logged_user()
