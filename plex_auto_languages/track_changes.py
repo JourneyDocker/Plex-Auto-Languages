@@ -181,14 +181,24 @@ class TrackChanges():
                     self._changes.append((episode, part, AudioStream.STREAMTYPE, matching_audio_stream))
                 # Subtitle stream
                 matching_subtitle_stream = self._match_subtitle_stream(part.subtitleStreams())
+
+                # If no matching subtitle found, only reset to None when the reference had NO subtitle selected.
                 if current_subtitle_stream is not None and matching_subtitle_stream is None:
-                    self._changes.append((episode, part, SubtitleStream.STREAMTYPE, None))
+                    if self._subtitle_stream is None:
+                        # reference explicitly has subtitles off -> clear current subtitle
+                        self._changes.append((episode, part, SubtitleStream.STREAMTYPE, None))
+                    else:
+                        # reference had a subtitle but we couldn't find a matching one for this part.
+                        # Do not clear — leave the user's current setting in place.
+                        pass
+
                 if matching_subtitle_stream is not None and \
                         (current_subtitle_stream is None or matching_subtitle_stream.id != current_subtitle_stream.id):
-                    if current_audio_stream.title is not None and "commentary" in current_audio_stream.title.lower() and matching_audio_stream is None:
+                    if current_audio_stream is not None and current_audio_stream.title is not None and \
+                            "commentary" in current_audio_stream.title.lower() and matching_audio_stream is None:
                         # if the changed stream was commentary but this ep has none, then don't touch subs
                         logger.debug(f"[Language Update] Skipping subtitle changes for "
-                         f"episode {self._reference} and user '{self.username}'")
+                                     f"episode {self._reference} and user '{self.username}'")
                     else:
                         self._changes.append((episode, part, SubtitleStream.STREAMTYPE, matching_subtitle_stream))
         self._update_description(episodes)
