@@ -51,13 +51,18 @@ def env_dict_update(original, var_name: str = ""):
     Returns:
         dict: The updated dictionary with values from environment variables
     """
+    sensitive_keys = {"PLEX_TOKEN", "PLEX_URL", "NOTIFICATIONS_APPRISE_CONFIGS"}
+
     for key, value in original.items():
         new_var_name = (f"{var_name}_{key}" if var_name != "" else key).upper()
         if isinstance(value, Mapping):
             original[key] = env_dict_update(original[key], new_var_name)
         elif new_var_name in os.environ:
             original[key] = yaml.safe_load(os.environ.get(new_var_name))
-            logger.info(f"Setting value of parameter {new_var_name} from environment variable")
+            if new_var_name in sensitive_keys:
+                logger.info(f"Setting value of parameter {new_var_name} from environment variable to '***'")
+            else:
+                logger.info(f"Setting value of parameter {new_var_name} from environment variable to '{original[key]}'")
     return original
 
 
@@ -245,8 +250,8 @@ class Configuration:
         if not isinstance(self.get("ignore_libraries"), list):
             logger.error("The 'ignore_libraries' parameter must be a list or a string-based comma separated list")
             raise InvalidConfiguration
-        if self.get("scheduler.enable") and not re.match(r"^\d{2}:\d{2}$", self.get("scheduler.schedule_time")):
-            logger.error("A valid 'schedule_time' parameter with the format 'HH:MM' is required (ex: 02:30)")
+        if self.get("scheduler.enable") and not re.match(r"^\d{2}:\d{2}$", str(self.get("scheduler.schedule_time"))):
+            logger.error("A valid 'schedule_time' parameter with the format 'HH:MM' is required (ex: \"02:30\")")
             raise InvalidConfiguration
         if self.get("data_path") != "" and not os.path.exists(self.get("data_path")):
             logger.error("The 'data_path' parameter must be a valid path")
