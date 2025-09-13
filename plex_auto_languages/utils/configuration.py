@@ -14,6 +14,38 @@ from plex_auto_languages.exceptions import InvalidConfiguration
 logger = get_logger()
 
 
+sensitive_keys = {"PLEX_TOKEN", "PLEX_URL", "NOTIFICATIONS_APPRISE_CONFIGS"}
+
+
+def to_env_key(path):
+    return path.replace('.', '_').upper()
+
+
+def mask_value(key, value):
+    if to_env_key(key) in sensitive_keys:
+        if isinstance(value, str):
+            return value[:4] + '*' * max(0, len(value) - 4)
+        else:
+            return '***'
+    return value
+
+
+def is_env_set(path):
+    env_key = to_env_key(path)
+    return env_key in os.environ
+
+
+def log_config_values(config_dict, prefix=""):
+    for key, value in config_dict.items():
+        full_key = f"{prefix}.{key}" if prefix else key
+        if isinstance(value, dict):
+            log_config_values(value, full_key)
+        else:
+            if not is_env_set(full_key):
+                masked = mask_value(full_key, value)
+                logger.info(f"Setting from Config: {full_key}={masked}")
+
+
 def deep_dict_update(original, update):
     """
     Recursively updates a dictionary with values from another dictionary.
@@ -51,18 +83,18 @@ def env_dict_update(original, var_name: str = ""):
     Returns:
         dict: The updated dictionary with values from environment variables
     """
-    sensitive_keys = {"PLEX_TOKEN", "PLEX_URL", "NOTIFICATIONS_APPRISE_CONFIGS"}
 
     for key, value in original.items():
         new_var_name = (f"{var_name}_{key}" if var_name != "" else key).upper()
         if isinstance(value, Mapping):
             original[key] = env_dict_update(original[key], new_var_name)
         elif new_var_name in os.environ:
-            original[key] = yaml.safe_load(os.environ.get(new_var_name))
-            if new_var_name in sensitive_keys:
-                logger.info(f"Setting value of parameter {new_var_name} from environment variable to '***'")
+            if "schedule_time" in new_var_name.lower():
+                original[key] = os.environ.get(new_var_name)
             else:
-                logger.info(f"Setting value of parameter {new_var_name} from environment variable to '{original[key]}'")
+                original[key] = yaml.safe_load(os.environ.get(new_var_name))
+            masked = mask_value(new_var_name, original[key])
+            logger.info(f"Setting from Env: {new_var_name.lower()}={masked}")
     return original
 
 
@@ -177,6 +209,7 @@ class Configuration:
         with open(user_config_path, "r", encoding="utf-8") as stream:
             user_config = yaml.safe_load(stream).get("plexautolanguages", {})
         self._config = deep_dict_update(self._config, user_config)
+        log_config_values(user_config)
 
     def _override_from_env(self):
         """
