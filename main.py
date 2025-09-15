@@ -11,7 +11,7 @@ from plex_auto_languages.utils.configuration import Configuration
 from plex_auto_languages.utils.healthcheck import HealthcheckServer
 
 # Version information
-__version__ = "1.3.13-dev"
+__version__ = "1.3.13-dev2"
 
 class PlexAutoLanguages:
     """
@@ -251,6 +251,8 @@ class PlexAutoLanguages:
                 if count % 60 == 0 and not self.plex.is_alive:
                     logger.warning("Lost connection to the Plex server")
                     self.must_stop = True
+                if count % 300 == 0:  # Every 5 minutes
+                    self.plex.cache.clean_idle_caches()
 
             # Clean up when stopping
             self.alive = False
