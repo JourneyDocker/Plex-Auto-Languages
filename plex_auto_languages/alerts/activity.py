@@ -132,10 +132,16 @@ class PlexActivity(PlexAlert):
 
         # Skip if this item has already been seen in the last 3 seconds
         activity_key = (self.user_id, self.item_key)
+        current_time = datetime.now()
+        # Clean old entries from recent_activities
+        plex.cache.recent_activities = {
+            k: v for k, v in plex.cache.recent_activities.items()
+            if v > current_time - timedelta(seconds=10)
+        }
         if activity_key in plex.cache.recent_activities and \
-                plex.cache.recent_activities[activity_key] > datetime.now() - timedelta(seconds=3):
+                plex.cache.recent_activities[activity_key] > current_time - timedelta(seconds=3):
             return
-        plex.cache.recent_activities[activity_key] = datetime.now()
+        plex.cache.recent_activities[activity_key] = current_time
 
         # Change tracks if needed
         item.reload()

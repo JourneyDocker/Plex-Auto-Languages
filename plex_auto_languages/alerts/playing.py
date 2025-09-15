@@ -1,5 +1,7 @@
 from __future__ import annotations
 from typing import TYPE_CHECKING
+import random
+from datetime import datetime, timedelta
 from plexapi.video import Episode
 
 from plex_auto_languages.alerts.base import PlexAlert
@@ -86,14 +88,30 @@ class PlexPlaying(PlexAlert):
         Returns:
             None
         """
+        # Clean old cache entries to prevent memory leaks
+        current_time = datetime.now()
+        plex.cache.user_clients = {
+            k: v for k, v in plex.cache.user_clients.items()
+            if isinstance(v, tuple) and len(v) >= 2 and (len(v) < 3 or v[2] > current_time - timedelta(hours=24))
+        }
+        plex.cache.session_states = {
+            k: v for k, v in plex.cache.session_states.items()
+            if isinstance(v, tuple) and len(v) >= 1 and (len(v) < 2 or v[1] > current_time - timedelta(hours=24))
+        }
+
         # Get User id and user's Plex instance
         if self.client_identifier not in plex.cache.user_clients:
             user_id, username = plex.get_user_from_client_identifier(self.client_identifier)
             if user_id is None:
                 return
-            plex.cache.user_clients[self.client_identifier] = (user_id, username)
+            plex.cache.user_clients[self.client_identifier] = (user_id, username, datetime.now())
         else:
-            user_id, username = plex.cache.user_clients[self.client_identifier]
+            existing = plex.cache.user_clients[self.client_identifier]
+            if isinstance(existing, tuple) and len(existing) >= 2:
+                user_id, username = existing[0], existing[1]
+            else:
+                user_id, username = existing  # old format
+            plex.cache.user_clients[self.client_identifier] = (user_id, username, datetime.now())
         user_plex = plex.get_plex_instance_of_user(user_id)
         if user_plex is None:
             return
@@ -114,17 +132,23 @@ class PlexPlaying(PlexAlert):
             return
 
         # Skip is the session state is unchanged
-        if self.session_key in plex.cache.session_states and plex.cache.session_states[self.session_key] == self.session_state:
-            return
+        if self.session_key in plex.cache.session_states:
+            existing = plex.cache.session_states[self.session_key]
+            if isinstance(existing, tuple) and existing[0] == self.session_state:
+                return
+            elif not isinstance(existing, tuple) and existing == self.session_state:
+                return
         logger.debug(f"[Play Session] "
                      f"Session: {self.session_key} | State: '{self.session_state}' | User id: {user_id} | Episode: {item}")
-        plex.cache.session_states[self.session_key] = self.session_state
+        plex.cache.session_states[self.session_key] = (self.session_state, datetime.now())
 
         # Reset cache if the session is stopped
         if self.session_state == "stopped":
             logger.debug(f"[Play Session] End of session {self.session_key} for user {user_id}")
-            del plex.cache.session_states[self.session_key]
-            del plex.cache.user_clients[self.client_identifier]
+            if self.session_key in plex.cache.session_states:
+                del plex.cache.session_states[self.session_key]
+            if self.client_identifier in plex.cache.user_clients:
+                del plex.cache.user_clients[self.client_identifier]
 
         # Skip if selected streams are unchanged
         item.reload()
@@ -136,6 +160,14 @@ class PlexPlaying(PlexAlert):
         if item.key in plex.cache.default_streams and plex.cache.default_streams[item.key] == pair_id:
             return
         plex.cache.default_streams[item.key] = pair_id
+
+        # Limit the size of default_streams to prevent memory leak
+        if len(plex.cache.default_streams) > 10000:
+            # Remove 10% of entries randomly to prevent unbounded growth
+            num_to_remove = len(plex.cache.default_streams) // 10
+            keys_to_remove = random.sample(list(plex.cache.default_streams.keys()), num_to_remove)
+            for key in keys_to_remove:
+                del plex.cache.default_streams[key]
 
         # Change tracks if needed
         plex.change_tracks(username, item, EventType.PLAY_OR_ACTIVITY)

@@ -58,4 +58,5 @@ class Scheduler(Thread):
             None
         """
         logger.info("Stopping scheduler")
+        schedule.clear()
         self._stop_event.set()
