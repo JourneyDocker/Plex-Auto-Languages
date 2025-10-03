@@ -122,12 +122,12 @@ class PlexActivity(PlexAlert):
 
         # Skip if the library or show should be ignored
         if plex.should_ignore_library(item.librarySectionTitle):
-            logger.debug(f"[Activity] Ignoring episode {item} due to ignored library: '{item.librarySectionTitle}'")
+            logger.debug(f"[Activity] Ignoring show: '{item.show().title}' episode: 'S{item.seasonNumber:02}E{item.episodeNumber:02}' due to ignored library: '{item.librarySectionTitle}'")
             return
 
         # Skip if the show should be ignored
         if plex.should_ignore_show(item.show()):
-            logger.debug(f"[Activity] Ignoring episode {item} due to Plex show labels")
+            logger.debug(f"[Activity] Ignoring show: '{item.show().title}' episode: 'S{item.seasonNumber:02}E{item.episodeNumber:02}' due to Plex show labels")
             return
 
         # Skip if this item has already been seen in the last 3 seconds
@@ -148,5 +148,5 @@ class PlexActivity(PlexAlert):
         user = plex.get_user_by_id(self.user_id)
         if user is None:
             return
-        logger.debug(f"[Activity] User: {user.name} | Episode: {item}")
+        logger.debug(f"[Activity] User: {user.name} | Show: '{item.show().title}' | Episode: 'S{item.seasonNumber:02}E{item.episodeNumber:02}'")
         plex.change_tracks(user.name, item, EventType.PLAY_OR_ACTIVITY)

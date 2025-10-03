@@ -118,12 +118,12 @@ class PlexTimeline(PlexAlert):
 
         # Skip if the library should be ignored
         if plex.should_ignore_library(item.librarySectionTitle):
-            logger.debug(f"[Timeline] Ignoring episode {item} due to ignored library: '{item.librarySectionTitle}'")
+            logger.debug(f"[Timeline] Ignoring show: '{item.show().title}' episode: 'S{item.seasonNumber:02}E{item.episodeNumber:02}' due to ignored library: '{item.librarySectionTitle}'")
             return
 
         # Skip if the show should be ignored
         if plex.should_ignore_show(item.show()):
-            logger.debug(f"[Timeline] Ignoring episode {item} due to Plex show labels")
+            logger.debug(f"[Timeline] Ignoring show: '{item.show().title}' episode: 'S{item.seasonNumber:02}E{item.episodeNumber:02}' due to Plex show labels")
             return
 
         # Check if the item has been added recently
