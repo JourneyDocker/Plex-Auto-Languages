@@ -218,7 +218,7 @@ class TrackChanges():
         for episode, part, stream_type, new_stream in self._changes:
             stream_type_name = "audio" if stream_type == AudioStream.STREAMTYPE else "subtitle"
             logger.debug(f"[Language Update] Updating {stream_type_name} stream of show '{episode.show().title}' episode 'S{episode.seasonNumber:02}E{episode.episodeNumber:02}' to "
-                         f"'{(new_stream.extendedDisplayTitle or new_stream.title or 'Unknown')}'")
+                         f"'{(new_stream.extendedDisplayTitle or new_stream.title or 'Unknown') if new_stream else 'Disabled'}'")
             if stream_type == AudioStream.STREAMTYPE:
                 part.setSelectedAudioStream(new_stream)
             elif stream_type == SubtitleStream.STREAMTYPE and new_stream is None:
