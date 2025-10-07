@@ -197,7 +197,8 @@ class TrackChanges():
                     if current_audio_stream is not None and current_audio_stream.title is not None and \
                             "commentary" in current_audio_stream.title.lower() and matching_audio_stream is None:
                         # if the changed stream was commentary but this ep has none, then don't touch subs
-                        logger.debug(f"[Language Update] Skipping subtitle changes for show '{episode.show().title}' episode 'S{episode.seasonNumber:02}E{episode.episodeNumber:02}' "
+                        logger.debug(f"[Language Update] Skipping subtitle changes for show '{episode.show().title}' "
+                                     f"episode 'S{episode.seasonNumber:02}E{episode.episodeNumber:02}' "
                                      f"and user '{self.username}'")
                     else:
                         self._changes.append((episode, part, SubtitleStream.STREAMTYPE, matching_subtitle_stream))
@@ -217,7 +218,8 @@ class TrackChanges():
         logger.debug(f"[Language Update] Performing {len(self._changes)} change(s) for show '{self._reference.show().title}'")
         for episode, part, stream_type, new_stream in self._changes:
             stream_type_name = "audio" if stream_type == AudioStream.STREAMTYPE else "subtitle"
-            logger.debug(f"[Language Update] Updating {stream_type_name} stream of show '{episode.show().title}' episode 'S{episode.seasonNumber:02}E{episode.episodeNumber:02}' to "
+            logger.debug(f"[Language Update] Updating {stream_type_name} stream of show '{episode.show().title}' "
+                         f"episode 'S{episode.seasonNumber:02}E{episode.episodeNumber:02}' to "
                          f"'{(new_stream.extendedDisplayTitle or new_stream.title or 'Unknown') if new_stream else 'Disabled'}'")
             if stream_type == AudioStream.STREAMTYPE:
                 part.setSelectedAudioStream(new_stream)
@@ -268,11 +270,22 @@ class TrackChanges():
         nb_updated = len({e.key for e, _, _, _ in self._changes})
         nb_total = len(episodes)
         self._title = self._reference.show().title
+
+        # Build subtitles text cleanly
+        if self._subtitle_stream is not None:
+            sub_title = (
+                f"{self._subtitle_stream.displayTitle} "
+                f"({self._subtitle_stream.extendedDisplayTitle or self._subtitle_stream.title or 'Unknown'})"
+            )
+        else:
+            sub_title = "None"
+
+        # Build description safely and clearly
         self._description = (
             f"Show: {self._reference.show().title}\n"
             f"User: {self._username}\n"
             f"Audio: {self._audio_stream.displayTitle if self._audio_stream is not None else 'None'}\n"
-            f"Subtitles: {self._subtitle_stream.displayTitle + f' ({self._subtitle_stream.extendedDisplayTitle or self._subtitle_stream.title or 'Unknown'})' if self._subtitle_stream is not None else 'None'}\n"
+            f"Subtitles: {sub_title}\n"
             f"Updated episodes: {nb_updated}/{nb_total} ({range_str})"
         )
 
