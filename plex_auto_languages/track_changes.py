@@ -227,6 +227,8 @@ class TrackChanges():
                 part.resetSelectedSubtitleStream()
             elif stream_type == SubtitleStream.STREAMTYPE:
                 part.setSelectedSubtitleStream(new_stream)
+        # Clear changes to free memory
+        self._changes.clear()
 
     def _is_episode_after(self, episode: Episode) -> bool:
         """

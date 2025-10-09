@@ -2,6 +2,7 @@ import time
 import requests
 import itertools
 import warnings
+import concurrent.futures
 from urllib.parse import urlparse
 from typing import Union, Callable, List, Tuple, Optional
 from datetime import datetime, timedelta
@@ -312,7 +313,7 @@ class PlexServer(UnprivilegedPlexServer):
         session = requests.Session()
         if parsed_url.scheme == "https":
             session = SelectiveVerifySession(whitelist=[parsed_url.hostname])
-        
+
         super().__init__(url, token, session=session)
         self.notifier = notifier
         self.config = config
@@ -569,27 +570,39 @@ class PlexServer(UnprivilegedPlexServer):
             new (bool): Whether the episode is newly added (True) or updated (False).
         """
         track_changes = NewOrUpdatedTrackChanges(event_type, new)
-        for user_id in self.get_all_user_ids():
-            # Switch to the user's Plex instance
-            user_plex = self.get_plex_instance_of_user(user_id)
-            if user_plex is None:
-                continue
+        def process_user(user_id):
+            try:
+                # Switch to the user's Plex instance
+                user_plex = self.get_plex_instance_of_user(user_id)
+                if user_plex is None:
+                    return None
 
-            # Get the most recently watched episode or the first one of the show
-            user_item = user_plex.fetch_item(item_id)
-            if user_item is None:
-                continue
-            reference = user_plex.get_last_watched_or_first_episode(user_item.show())
-            if reference is None:
-                continue
+                # Get the most recently watched episode or the first one of the show
+                user_item = user_plex.fetch_item(item_id)
+                if user_item is None:
+                    return None
+                reference = user_plex.get_last_watched_or_first_episode(user_item.show())
+                if reference is None:
+                    return None
 
-            # Change tracks
-            reference.reload()
-            user_item.reload()
-            user = self.get_user_by_id(user_id)
-            if user is None:
-                return
-            track_changes.change_track_for_user(user.name, reference, user_item)
+                # Change tracks
+                reference.reload()
+                user_item.reload()
+                user = self.get_user_by_id(user_id)
+                if user is None:
+                    return None
+                return (user.name, reference, user_item)
+            except Exception as e:
+                logger.error(f"Error processing user {user_id}: {e}")
+                return None
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+            futures = {executor.submit(process_user, user_id): user_id for user_id in self.get_all_user_ids()}
+            for future in concurrent.futures.as_completed(futures):
+                result = future.result()
+                if result is not None:
+                    username, reference, user_item = result
+                    track_changes.change_track_for_user(username, reference, user_item)
 
         # Notify changes
         if track_changes.has_changes:
@@ -617,6 +630,8 @@ class PlexServer(UnprivilegedPlexServer):
         # Notify changes
         if track_changes.has_changes:
             self.notify_changes(track_changes)
+        # Clean up
+        track_changes = None
 
     def notify_changes(self, track_changes: Union[TrackChanges, NewOrUpdatedTrackChanges]) -> None:
         """
