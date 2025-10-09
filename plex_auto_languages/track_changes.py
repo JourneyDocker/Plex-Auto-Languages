@@ -575,7 +575,7 @@ class NewOrUpdatedTrackChanges():
         Returns:
             bool: True if there are changes for any user, False otherwise.
         """
-        return sum([1 for tc in self._track_changes if tc.has_changes]) > 0
+        return len(self._track_changes) > 0
 
     def change_track_for_user(self, username: str, reference: Episode, episode: Episode) -> None:
         """
@@ -592,8 +592,10 @@ class NewOrUpdatedTrackChanges():
         self._episode = episode
         track_changes = TrackChanges(username, reference, self._event_type)
         track_changes.compute([episode])
+        changes_were_made = track_changes.has_changes
         track_changes.apply()
-        self._track_changes.append(track_changes)
+        if changes_were_made:
+            self._track_changes.append(track_changes)
         self._update_description()
 
     def _update_description(self) -> None:

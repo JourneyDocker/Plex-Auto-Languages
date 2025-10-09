@@ -625,10 +625,11 @@ class PlexServer(UnprivilegedPlexServer):
         track_changes.compute(episodes)
 
         # Perform changes
+        changes_were_made = track_changes.has_changes
         track_changes.apply()
 
         # Notify changes
-        if track_changes.has_changes:
+        if changes_were_made:
             self.notify_changes(track_changes)
         # Clean up
         track_changes = None
