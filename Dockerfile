@@ -1,4 +1,4 @@
-FROM python:3.13.7-alpine
+FROM python:3.14.0-alpine
 
 # Set environment variables
 ENV LANG=C.UTF-8 \
