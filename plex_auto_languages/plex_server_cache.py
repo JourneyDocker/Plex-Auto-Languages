@@ -205,6 +205,16 @@ class PlexServerCache:
         """
         self._instance_user_tokens[str(user_id)] = token
 
+    def clear_instance_user_token(self, user_id: str) -> None:
+        """
+        Clears the cached authentication token for a specific user.
+
+        Args:
+            user_id (str): The ID of the user whose token to clear.
+        """
+        if str(user_id) in self._instance_user_tokens:
+            del self._instance_user_tokens[str(user_id)]
+
     def _get_cache_file_path(self) -> str:
         """
         Determines the file path for the cache file.

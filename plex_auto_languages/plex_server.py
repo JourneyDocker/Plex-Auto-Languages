@@ -486,8 +486,15 @@ class PlexServer(UnprivilegedPlexServer):
             self.cache.set_instance_user_token(user.id, user_token)
         user_plex = UnprivilegedPlexServer(self._plex_url, user_token, session=self._session)
         if not user_plex.connected:
-            logger.error(f"Connection to the Plex server failed for user '{matching_users[0].name}'")
-            return None
+            logger.warning(f"Connection to the Plex server failed for user '{matching_users[0].name}' with cached token, refreshing token")
+            # Clear cached token and get a new one
+            self.cache.clear_instance_user_token(user.id)
+            user_token = user.get_token(self.unique_id)
+            self.cache.set_instance_user_token(user.id, user_token)
+            user_plex = UnprivilegedPlexServer(self._plex_url, user_token, session=self._session)
+            if not user_plex.connected:
+                logger.error(f"Connection to the Plex server failed for user '{matching_users[0].name}' even with fresh token")
+                return None
         return user_plex
 
     def get_user_from_client_identifier(self, client_identifier: str) -> Tuple[Optional[str], Optional[str]]:

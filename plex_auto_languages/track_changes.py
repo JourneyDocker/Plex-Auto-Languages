@@ -221,12 +221,16 @@ class TrackChanges():
             logger.debug(f"[Language Update] Updating {stream_type_name} stream of show '{episode.show().title}' "
                          f"episode 'S{episode.seasonNumber:02}E{episode.episodeNumber:02}' to "
                          f"'{(new_stream.extendedDisplayTitle or new_stream.title or 'Unknown') if new_stream else 'Disabled'}'")
-            if stream_type == AudioStream.STREAMTYPE:
-                part.setSelectedAudioStream(new_stream)
-            elif stream_type == SubtitleStream.STREAMTYPE and new_stream is None:
-                part.resetSelectedSubtitleStream()
-            elif stream_type == SubtitleStream.STREAMTYPE:
-                part.setSelectedSubtitleStream(new_stream)
+            try:
+                if stream_type == AudioStream.STREAMTYPE:
+                    part.setSelectedAudioStream(new_stream)
+                elif stream_type == SubtitleStream.STREAMTYPE and new_stream is None:
+                    part.resetSelectedSubtitleStream()
+                elif stream_type == SubtitleStream.STREAMTYPE:
+                    part.setSelectedSubtitleStream(new_stream)
+            except Exception as e:
+                logger.error(f"[Language Update] Failed to update {stream_type_name} stream for episode "
+                             f"'S{episode.seasonNumber:02}E{episode.episodeNumber:02}' of show '{episode.show().title}': {e}")
         # Clear changes to free memory
         self._changes.clear()
 
