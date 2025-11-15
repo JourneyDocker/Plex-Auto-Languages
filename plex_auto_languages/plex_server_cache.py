@@ -317,20 +317,20 @@ class PlexServerCache:
 
         # Clean recent_activities (older than 10 seconds)
         self.recent_activities = {
-            k: v for k, v in self.recent_activities.items()
-            if v > current_time - timedelta(seconds=10)
+            activity_key: timestamp for activity_key, timestamp in self.recent_activities.items()
+            if timestamp > current_time - timedelta(seconds=10)
         }
 
         # Clean user_clients (older than 24 hours)
         self.user_clients = {
-            k: v for k, v in self.user_clients.items()
-            if isinstance(v, tuple) and len(v) >= 2 and (len(v) < 3 or v[2] > current_time - timedelta(hours=24))
+            client_identifier: client_info for client_identifier, client_info in self.user_clients.items()
+            if isinstance(client_info, tuple) and len(client_info) >= 2 and (len(client_info) < 3 or client_info[2] > current_time - timedelta(hours=24))
         }
 
         # Clean session_states (older than 24 hours)
         self.session_states = {
-            k: v for k, v in self.session_states.items()
-            if isinstance(v, tuple) and len(v) >= 1 and (len(v) < 2 or v[1] > current_time - timedelta(hours=24))
+            session_key: session_info for session_key, session_info in self.session_states.items()
+            if isinstance(session_info, tuple) and len(session_info) >= 1 and (len(session_info) < 2 or session_info[1] > current_time - timedelta(hours=24))
         }
 
         # Clean default_streams if too large

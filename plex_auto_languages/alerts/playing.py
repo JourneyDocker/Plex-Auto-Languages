@@ -91,12 +91,12 @@ class PlexPlaying(PlexAlert):
         # Clean old cache entries to prevent memory leaks
         current_time = datetime.now()
         plex.cache.user_clients = {
-            k: v for k, v in plex.cache.user_clients.items()
-            if isinstance(v, tuple) and len(v) >= 2 and (len(v) < 3 or v[2] > current_time - timedelta(hours=24))
+            client_identifier: client_info for client_identifier, client_info in plex.cache.user_clients.items()
+            if isinstance(client_info, tuple) and len(client_info) >= 2 and (len(client_info) < 3 or client_info[2] > current_time - timedelta(hours=24))
         }
         plex.cache.session_states = {
-            k: v for k, v in plex.cache.session_states.items()
-            if isinstance(v, tuple) and len(v) >= 1 and (len(v) < 2 or v[1] > current_time - timedelta(hours=24))
+            session_key: session_info for session_key, session_info in plex.cache.session_states.items()
+            if isinstance(session_info, tuple) and len(session_info) >= 1 and (len(session_info) < 2 or session_info[1] > current_time - timedelta(hours=24))
         }
 
         # Get User id and user's Plex instance
@@ -106,14 +106,18 @@ class PlexPlaying(PlexAlert):
                 return
             plex.cache.user_clients[self.client_identifier] = (user_id, username, datetime.now())
         else:
-            existing = plex.cache.user_clients[self.client_identifier]
-            if isinstance(existing, tuple) and len(existing) >= 2:
-                user_id, username = existing[0], existing[1]
+            cached_client_data = plex.cache.user_clients[self.client_identifier]
+            if isinstance(cached_client_data, tuple) and len(cached_client_data) >= 2:
+                user_id, username = cached_client_data[0], cached_client_data[1]
             else:
-                user_id, username = existing  # old format
+                user_id, username = cached_client_data  # old format
             plex.cache.user_clients[self.client_identifier] = (user_id, username, datetime.now())
         user_plex = plex.get_plex_instance_of_user(user_id)
         if user_plex is None:
+            return
+
+        # Check if key is streaming live TV
+        if self.item_key is None or self.item_key.startswith("/livetv"):
             return
 
         # Skip if not an Episode
@@ -133,10 +137,10 @@ class PlexPlaying(PlexAlert):
 
         # Skip is the session state is unchanged
         if self.session_key in plex.cache.session_states:
-            existing = plex.cache.session_states[self.session_key]
-            if isinstance(existing, tuple) and existing[0] == self.session_state:
+            cached_session_data = plex.cache.session_states[self.session_key]
+            if isinstance(cached_session_data, tuple) and cached_session_data[0] == self.session_state:
                 return
-            elif not isinstance(existing, tuple) and existing == self.session_state:
+            elif not isinstance(cached_session_data, tuple) and cached_session_data == self.session_state:
                 return
         logger.debug(f"[Play Session] "
                      f"Session: {self.session_key} | State: '{self.session_state}' | User id: {user_id} | Episode: {item}")
@@ -153,13 +157,13 @@ class PlexPlaying(PlexAlert):
         # Skip if selected streams are unchanged
         item.reload()
         audio_stream, subtitle_stream = plex.get_selected_streams(item)
-        pair_id = (
+        selected_streams_ids = (
             audio_stream.id if audio_stream is not None else None,
             subtitle_stream.id if subtitle_stream is not None else None
         )
-        if item.key in plex.cache.default_streams and plex.cache.default_streams[item.key] == pair_id:
+        if item.key in plex.cache.default_streams and plex.cache.default_streams[item.key] == selected_streams_ids:
             return
-        plex.cache.default_streams[item.key] = pair_id
+        plex.cache.default_streams[item.key] = selected_streams_ids
 
         # Limit the size of default_streams to prevent memory leak
         if len(plex.cache.default_streams) > 10000:
