@@ -153,7 +153,7 @@ class Configuration:
             logger.info(f"Parsing config file '{user_config_path}'")
             self._override_from_config_file(user_config_path)
         self._override_from_env()
-        self._override_plex_token_from_secret()
+        self._override_plex_secrets_from_files()
         self._postprocess_config()
         self._validate_config()
         self._add_system_config()
@@ -220,20 +220,28 @@ class Configuration:
         """
         self._config = env_dict_update(self._config)
 
-    def _override_plex_token_from_secret(self):
+    def _override_plex_secrets_from_files(self):
         """
-        Overrides Plex token with value from Docker secret if available.
+        Overrides Plex token and URL with values from Docker secrets if available.
 
-        Checks for a Plex token in the Docker secrets location or a custom
-        location specified by the PLEX_TOKEN_FILE environment variable.
+        Checks for Plex token and URL in Docker secrets locations or custom
+        locations specified by PLEX_TOKEN_FILE and PLEX_URL_FILE environment variables.
         """
+        # Handle Plex token secret
         plex_token_file_path = os.environ.get("PLEX_TOKEN_FILE", "/run/secrets/plex_token")
-        if not os.path.exists(plex_token_file_path):
-            return
-        logger.info("Getting PLEX_TOKEN from Docker secret")
-        with open(plex_token_file_path, "r", encoding="utf-8") as stream:
-            plex_token = stream.readline().strip()
-        self._config["plex"]["token"] = plex_token
+        if os.path.exists(plex_token_file_path):
+            logger.info("Getting PLEX_TOKEN from Docker secret")
+            with open(plex_token_file_path, "r", encoding="utf-8") as stream:
+                plex_token = stream.readline().strip()
+            self._config["plex"]["token"] = plex_token
+
+        # Handle Plex URL secret
+        plex_url_file_path = os.environ.get("PLEX_URL_FILE", "/run/secrets/plex_url")
+        if os.path.exists(plex_url_file_path):
+            logger.info("Getting PLEX_URL from Docker secret")
+            with open(plex_url_file_path, "r", encoding="utf-8") as stream:
+                plex_url = stream.readline().strip()
+            self._config["plex"]["url"] = plex_url
 
     def _postprocess_config(self):
         """

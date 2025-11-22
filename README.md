@@ -213,6 +213,9 @@ debug: false   # Enable debug logs
 > The Plex Token can also be provided as a Docker secret, the filepath of the secret must then be specified in the environment variable `PLEX_TOKEN_FILE` which defaults to `/run/secrets/plex_token`.
 
 > [!NOTE]
+> The Plex URL can also be provided as a Docker secret, the filepath of the secret must then be specified in the environment variable `PLEX_URL_FILE` which defaults to `/run/secrets/plex_url`.
+
+> [!NOTE]
 > The `NOTIFICATIONS_APPRISE_CONFIGS` Environment Variable should be set as a JSON string representing an array of notification configurations. Each configuration can include `urls`, `users`, and `events` as needed. For example:
 > ```json
 > [
