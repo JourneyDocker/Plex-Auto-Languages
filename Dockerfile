@@ -1,3 +1,11 @@
+# Build stage
+FROM python:3.14.2-alpine as builder
+
+# Install Python dependencies
+COPY ./requirements.txt /tmp/requirements.txt
+RUN pip install --no-cache-dir -r /tmp/requirements.txt
+
+# Runtime stage
 FROM python:3.14.2-alpine
 
 # Set environment variables
@@ -7,17 +15,16 @@ ENV LANG=C.UTF-8 \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1
 
-# Install dependencies and clean up in a single layer to reduce image size
-RUN apk --no-cache add curl tini tzdata
+# Install runtime dependencies
+RUN apk update && apk --no-cache --no-scripts add curl tini tzdata
 
-# Set up working directory and install Python dependencies
+# Set up working directory
 WORKDIR /app
 
-COPY ./requirements.txt /app/requirements.txt
+# Copy installed Python packages from builder stage
+COPY --from=builder /usr/local/lib/python3.14/site-packages /usr/local/lib/python3.14/site-packages
 
-RUN pip install --no-cache-dir -r requirements.txt
-
-# Copy the rest of the application code
+# Copy the application code
 COPY . /app/
 
 # Define a mount point for configuration
