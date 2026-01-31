@@ -1,7 +1,9 @@
 import signal
 import argparse
 from time import sleep
+import http.client
 from websocket import WebSocketConnectionClosedException, WebSocketTimeoutException
+from urllib3.exceptions import ProtocolError
 
 from plex_auto_languages.plex_server import PlexServer
 from plex_auto_languages.utils.notifier import Notifier
@@ -11,7 +13,7 @@ from plex_auto_languages.utils.configuration import Configuration
 from plex_auto_languages.utils.healthcheck import HealthcheckServer
 
 # Version information
-__version__ = "1.4.0"
+__version__ = "1.4.1-dev"
 
 class PlexAutoLanguages:
     """
@@ -37,6 +39,7 @@ class PlexAutoLanguages:
         stop_signal (bool): Flags if a stop signal (e.g., SIGINT) was received.
         plex_alert_listener (PlexAlertListener): Listener for Plex server alerts.
         initializing (bool): Indicates if the application is in initialization phase.
+        reconnect_delay (int): Current delay in seconds before reconnection attempts, with exponential backoff.
         config (Configuration): Configuration object containing application settings.
         healthcheck_server (HealthcheckServer): Server for monitoring application health.
         notifier (Notifier): Service for sending notifications and alerts.
@@ -65,6 +68,7 @@ class PlexAutoLanguages:
         self.stop_signal = False
         self.plex_alert_listener = None
         self.initializing = False
+        self.reconnect_delay = 1  # Initial delay for exponential backoff
 
         # Load the configuration file.
         self.config = Configuration(user_config_path)
@@ -238,6 +242,7 @@ class PlexAutoLanguages:
                 self.plex.start_alert_listener(self.alert_listener_error_callback)
                 self.alive = True
                 logger.info("Application initialization completed successfully")
+                self.reconnect_delay = 1  # Reset backoff on successful connection
             except Exception as e:
                 logger.error(f"Critical error during initialization: {str(e)}")
                 raise
@@ -259,8 +264,9 @@ class PlexAutoLanguages:
             self.plex.save_cache()
             self.plex.stop()
             if not self.stop_signal:
-                sleep(1)
-                logger.info("Attempting to reestablish connection to the Plex server...")
+                sleep(self.reconnect_delay)
+                logger.info(f"Attempting to reestablish connection to the Plex server (delay: {self.reconnect_delay}s)...")
+                self.reconnect_delay = min(self.reconnect_delay * 2, 300)  # Exponential backoff, max 5 minutes
 
         if self.scheduler:
             self.scheduler.shutdown()
@@ -276,6 +282,7 @@ class PlexAutoLanguages:
         This callback is invoked when the alert listener encounters an error. It processes
         different types of exceptions and takes appropriate actions:
         - For WebSocket connection issues, it logs warnings
+        - For HTTP connection issues (RemoteDisconnected, ProtocolError), it logs concise messages
         - For Unicode decode errors, it logs a debug message and continues
         - For other unexpected errors, it logs detailed error information
 
@@ -291,6 +298,8 @@ class PlexAutoLanguages:
             logger.warning("WebSocket connection to the Plex server has been closed unexpectedly")
         elif isinstance(error, WebSocketTimeoutException):
             logger.warning("WebSocket connection to the Plex server has timed out")
+        elif isinstance(error, (http.client.RemoteDisconnected, ProtocolError)):
+            logger.warning(f"[Network] Connection lost to Plex server ({type(error).__name__}). Reconnecting...")
         elif isinstance(error, UnicodeDecodeError):
             logger.debug("Received a malformed WebSocket payload - ignoring it")
             return

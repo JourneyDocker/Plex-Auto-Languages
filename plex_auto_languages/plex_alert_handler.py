@@ -1,10 +1,11 @@
 from __future__ import annotations
 from typing import TYPE_CHECKING
 from time import sleep
+import http.client
 from queue import Queue, Empty
 from threading import Thread, Event
 from requests.exceptions import ReadTimeout
-from urllib3.exceptions import ReadTimeoutError
+from urllib3.exceptions import ReadTimeoutError, ProtocolError
 from plex_auto_languages.alerts import PlexActivity, PlexTimeline, PlexPlaying, PlexStatus
 from plex_auto_languages.utils.logger import get_logger
 
@@ -117,6 +118,10 @@ class PlexAlertHandler():
                     logger.warning(f"ReadTimeout while processing {alert.TYPE} alert, retrying (attempt {retry_counter})...")
                     logger.debug(alert.message)
                     sleep(1)
+                except (http.client.RemoteDisconnected, ProtocolError) as e:
+                    logger.warning(f"[Network] Connection lost while processing {alert.TYPE} alert ({type(e).__name__}). Skipping alert...")
+                    logger.debug(alert.message)
+                    retry_counter = 0
                 except Exception:
                     logger.exception(f"Unable to process {alert.TYPE}")
                     logger.debug(alert.message)
