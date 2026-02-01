@@ -36,14 +36,16 @@ def is_env_set(path):
 
 
 def log_config_values(config_dict, prefix=""):
+    settings = []
     for key, value in config_dict.items():
         full_key = f"{prefix}.{key}" if prefix else key
         if isinstance(value, dict):
-            log_config_values(value, full_key)
+            settings.extend(log_config_values(value, full_key))
         else:
             if not is_env_set(full_key):
                 masked = mask_value(full_key, value)
-                logger.info(f"Setting from Config: {full_key}={masked}")
+                settings.append(f"{full_key}={masked}")
+    return settings
 
 
 def deep_dict_update(original, update):
@@ -209,7 +211,9 @@ class Configuration:
         with open(user_config_path, "r", encoding="utf-8") as stream:
             user_config = yaml.safe_load(stream).get("plexautolanguages", {})
         self._config = deep_dict_update(self._config, user_config)
-        log_config_values(user_config)
+        settings = log_config_values(user_config)
+        if settings:
+            logger.info(f"Settings from Config: {', '.join(settings)}")
 
     def _override_from_env(self):
         """
