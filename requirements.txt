@@ -1,4 +1,4 @@
-plexapi==4.17.2
+plexapi==4.18.0
 websocket-client==1.9.0
 apprise==1.9.7
 PyYAML==6.0.3
