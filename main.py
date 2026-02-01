@@ -1,9 +1,7 @@
 import signal
 import argparse
 from time import sleep
-import http.client
 from websocket import WebSocketConnectionClosedException, WebSocketTimeoutException
-from urllib3.exceptions import ProtocolError
 
 from plex_auto_languages.plex_server import PlexServer
 from plex_auto_languages.utils.notifier import Notifier
@@ -13,7 +11,7 @@ from plex_auto_languages.utils.configuration import Configuration
 from plex_auto_languages.utils.healthcheck import HealthcheckServer
 
 # Version information
-__version__ = "1.4.1-dev2"
+__version__ = "1.4.1-dev3"
 
 class PlexAutoLanguages:
     """
@@ -298,8 +296,6 @@ class PlexAutoLanguages:
             logger.warning("WebSocket connection to the Plex server has been closed unexpectedly")
         elif isinstance(error, WebSocketTimeoutException):
             logger.warning("WebSocket connection to the Plex server has timed out")
-        elif isinstance(error, (http.client.RemoteDisconnected, ProtocolError)):
-            logger.warning(f"[Network] Connection lost to Plex server ({type(error).__name__}). Reconnecting...")
         elif isinstance(error, UnicodeDecodeError):
             logger.debug("Received a malformed WebSocket payload - ignoring it")
             return

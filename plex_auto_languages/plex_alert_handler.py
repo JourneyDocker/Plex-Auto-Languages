@@ -4,7 +4,7 @@ from time import sleep
 import http.client
 from queue import Queue, Empty
 from threading import Thread, Event
-from requests.exceptions import ReadTimeout, ConnectionError
+from requests.exceptions import ReadTimeout, ConnectionError, HTTPError, RequestException
 from urllib3.exceptions import ReadTimeoutError, ProtocolError
 from plex_auto_languages.alerts import PlexActivity, PlexTimeline, PlexPlaying, PlexStatus
 from plex_auto_languages.utils.logger import get_logger
@@ -115,16 +115,21 @@ class PlexAlertHandler():
                     retry_counter = 0
                 except (ReadTimeout, ReadTimeoutError):
                     retry_counter += 1
+                    if retry_counter > 3:
+                        logger.error(f"ReadTimeout persisted for {alert.TYPE} alert. Skipping.")
+                        retry_counter = 0
+                        continue
                     logger.warning(f"ReadTimeout while processing {alert.TYPE} alert, retrying (attempt {retry_counter})...")
-                    logger.debug(alert.message)
                     sleep(1)
-                # Catch ConnectionError (Requests wrapper) along with low-level ProtocolErrors
-                except (http.client.RemoteDisconnected, ProtocolError, ConnectionError) as e:
-                    logger.warning(f"[Network] Connection lost while processing {alert.TYPE} alert ({type(e).__name__}). Skipping alert...")
-                    logger.debug(f"Alert details: {alert.message}")
+                except (http.client.RemoteDisconnected, ProtocolError, ConnectionError, HTTPError) as e:
+                    logger.warning(f"[Network] {type(e).__name__} while processing {alert.TYPE} alert. Skipping...")
+                    logger.debug(f"Error details: {e}")
+                    retry_counter = 0
+                except RequestException as e:
+                    logger.error(f"[Requests] General failure while processing {alert.TYPE}: {e}")
                     retry_counter = 0
                 except Exception:
-                    logger.exception(f"Unable to process {alert.TYPE}")
+                    logger.exception(f"Unexpected error while processing {alert.TYPE}")
                     logger.debug(alert.message)
                     retry_counter = 0
             except Empty:
