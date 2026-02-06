@@ -1,12 +1,12 @@
 # Build stage
-FROM python:3.14.2-alpine as builder
+FROM python:3.14.3-alpine as builder
 
 # Install Python dependencies
 COPY ./requirements.txt /tmp/requirements.txt
 RUN pip install --no-cache-dir -r /tmp/requirements.txt
 
 # Runtime stage
-FROM python:3.14.2-alpine
+FROM python:3.14.3-alpine
 
 # Set environment variables
 ENV LANG=C.UTF-8 \
