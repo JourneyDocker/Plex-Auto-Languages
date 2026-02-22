@@ -231,8 +231,12 @@ class TrackChanges():
             except Exception as e:
                 logger.error(f"[Language Update] Failed to update {stream_type_name} stream for episode "
                              f"'S{episode.seasonNumber:02}E{episode.episodeNumber:02}' of show '{episode.show().title}': {e}")
-        # Clear changes to free memory
+        # Clear changes and references to free memory
         self._changes.clear()
+        self._reference = None
+        self._audio_stream = None
+        self._subtitle_stream = None
+        self._changes = None
 
     def _is_episode_after(self, episode: Episode) -> bool:
         """

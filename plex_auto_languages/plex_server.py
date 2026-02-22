@@ -614,6 +614,10 @@ class PlexServer(UnprivilegedPlexServer):
         # Notify changes
         if track_changes.has_changes:
             self.notify_changes(track_changes)
+        # Clear references to free memory
+        track_changes._track_changes.clear()
+        track_changes._episode = None
+        track_changes = None
 
     def change_tracks(self, username: str, episode: Episode, event_type: EventType) -> None:
         """

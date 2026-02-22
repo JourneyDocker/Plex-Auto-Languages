@@ -88,16 +88,6 @@ class PlexPlaying(PlexAlert):
         Returns:
             None
         """
-        # Clean old cache entries to prevent memory leaks
-        current_time = datetime.now()
-        plex.cache.user_clients = {
-            client_identifier: client_info for client_identifier, client_info in plex.cache.user_clients.items()
-            if isinstance(client_info, tuple) and len(client_info) >= 2 and (len(client_info) < 3 or client_info[2] > current_time - timedelta(hours=24))
-        }
-        plex.cache.session_states = {
-            session_key: session_info for session_key, session_info in plex.cache.session_states.items()
-            if isinstance(session_info, tuple) and len(session_info) >= 1 and (len(session_info) < 2 or session_info[1] > current_time - timedelta(hours=24))
-        }
 
         # Get User id and user's Plex instance
         if self.client_identifier not in plex.cache.user_clients:

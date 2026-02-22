@@ -334,10 +334,31 @@ class PlexServerCache:
         }
 
         # Clean default_streams if too large
-        if len(self.default_streams) > 10000:
+        if len(self.default_streams) > 5000:
             import random
-            num_to_remove = len(self.default_streams) // 10
+            # Remove 20% if over 5000, or 50% if over 10000
+            if len(self.default_streams) > 10000:
+                num_to_remove = len(self.default_streams) // 2
+            else:
+                num_to_remove = len(self.default_streams) // 5
             if num_to_remove > 0:
                 keys_to_remove = random.sample(list(self.default_streams.keys()), num_to_remove)
                 for key in keys_to_remove:
                     del self.default_streams[key]
+
+        # Clean newly_added and newly_updated (older than last refresh)
+        if self._last_refresh != datetime.fromtimestamp(0):
+            self.newly_added = {
+                episode_id: added_at for episode_id, added_at in self.newly_added.items()
+                if added_at > self._last_refresh
+            }
+            self.newly_updated = {
+                episode_id: updated_at for episode_id, updated_at in self.newly_updated.items()
+                if updated_at > self._last_refresh
+            }
+
+        # Clean expired user caches
+        if current_time > self._instance_users_valid_until:
+            self._instance_users.clear()
+            self._instance_user_tokens.clear()
+            self._instance_users_valid_until = datetime.fromtimestamp(0)
