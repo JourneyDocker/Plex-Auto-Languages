@@ -1,5 +1,5 @@
 # Build stage
-FROM python:3.14.3-alpine as builder
+FROM python:3.14.3-alpine AS builder
 
 # Install Python dependencies
 COPY ./requirements.txt /tmp/requirements.txt
