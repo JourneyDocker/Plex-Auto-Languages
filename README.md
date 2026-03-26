@@ -33,7 +33,7 @@ Plex Auto Languages enhances your Plex experience by automatically updating the 
   Perfect for households with diverse preferences. Each user gets their tracks automatically and independently selected.
 
 > [!NOTE]
-> Due to recent Plex API security changes, automatic token retrieval for external/remote shared users outside of your Plex Home is no longer possible. These users are gracefully ignored.
+> Due to Plex API security changes on 03/25/26, automatic token retrieval for external/remote shared users outside of your Plex Home is no longer possible. These users are gracefully ignored. I **DO NOT ADVISE** joining a plex home to get around this. You can read more about this [here](https://forums.plex.tv/t/information-related-to-security-vulnerabilities/935164/33)
 
 ## Getting Started
 
