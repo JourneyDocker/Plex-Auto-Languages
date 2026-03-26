@@ -325,6 +325,7 @@ class PlexServer(UnprivilegedPlexServer):
         self._alert_handler = None
         self._alert_listener = None
         self.cache = PlexServerCache(self)
+        self._unauthorized_users = set()
 
     @property
     def user_id(self) -> Optional[str]:
@@ -475,26 +476,87 @@ class PlexServer(UnprivilegedPlexServer):
         """
         if str(self.user_id) == str(user_id):
             return self
+
+        if str(user_id) in self._unauthorized_users:
+            return None
+
         matching_users = [u for u in self.get_instance_users() if str(u.id) == str(user_id)]
         if len(matching_users) == 0:
             logger.error(f"Unable to find user with id '{user_id}'")
             return None
         user = matching_users[0]
+
+        def _fetch_token_for_user(user_obj) -> Optional[str]:
+            token = user_obj.get_token(self.unique_id)
+            if token:
+                return token
+
+            logger.debug(f"get_token returned None for '{user_obj.name}', attempting switchHomeUser fallback")
+            try:
+                admin_account = self._plex.myPlexAccount()
+                home_account = admin_account.switchHomeUser(user_obj.name)
+                token = home_account.authToken
+
+                # Attempt to get the server-specific token from resources as local servers
+                # often reject the generic plex.tv authToken
+                try:
+                    resources = home_account.resources()
+                    for resource in resources:
+                        if resource.clientIdentifier == self.unique_id and getattr(resource, 'accessToken', None):
+                            token = resource.accessToken
+                            logger.debug(f"Retrieved server-specific token for '{user_obj.name}' from resources")
+                            break
+                except Exception as res_e:
+                    logger.debug(f"Failed to fetch resources for '{user_obj.name}', falling back to generic authToken: {res_e}")
+
+                if not token:
+                    logger.error(f"switchHomeUser succeeded but returned no token for '{user_obj.name}'")
+                return token
+            except Exception as e:
+                logger.debug(
+                    f"Unable to retrieve token for user '{user_obj.name}' via switchHomeUser. "
+                    f"They are likely an external shared user. Error: {e}"
+                )
+                return None
+
         user_token = self.cache.get_instance_user_token(user.id)
         if user_token is None:
-            user_token = user.get_token(self.unique_id)
-            self.cache.set_instance_user_token(user.id, user_token)
-        user_plex = UnprivilegedPlexServer(self._plex_url, user_token, session=self._session)
+            user_token = _fetch_token_for_user(user)
+            if user_token:
+                self.cache.set_instance_user_token(user.id, user_token)
+            else:
+                logger.warning(f"Cannot get a valid token for user '{user.name}'. Marking as external/unauthorized to prevent further checks until next restart.")
+                self._unauthorized_users.add(str(user.id))
+                return None
+
+        # Create a fresh session to avoid polluting the admin session's X-Plex-Token
+        parsed_url = urlparse(self._plex_url)
+
+        def _create_user_session():
+            user_session = requests.Session()
+            if parsed_url.scheme == "https":
+                return SelectiveVerifySession(whitelist=[parsed_url.hostname])
+            return user_session
+
+        user_plex = UnprivilegedPlexServer(self._plex_url, user_token, session=_create_user_session())
         if not user_plex.connected:
             logger.warning(f"Connection to the Plex server failed for user '{matching_users[0].name}' with cached token, refreshing token")
             # Clear cached token and get a new one
             self.cache.clear_instance_user_token(user.id)
-            user_token = user.get_token(self.unique_id)
-            self.cache.set_instance_user_token(user.id, user_token)
-            user_plex = UnprivilegedPlexServer(self._plex_url, user_token, session=self._session)
-            if not user_plex.connected:
-                logger.error(f"Connection to the Plex server failed for user '{matching_users[0].name}' even with fresh token")
+
+            user_token = _fetch_token_for_user(user)
+
+            if user_token:
+                self.cache.set_instance_user_token(user.id, user_token)
+                user_plex = UnprivilegedPlexServer(self._plex_url, user_token, session=_create_user_session())
+                if not user_plex.connected:
+                    logger.error(f"Connection to the Plex server failed for user '{matching_users[0].name}' even with fresh token")
+                    return None
+            else:
+                logger.warning(f"Cannot get a valid token for user '{user.name}'. Marking as external/unauthorized to prevent further checks until next restart.")
+                self._unauthorized_users.add(str(user.id))
                 return None
+
         return user_plex
 
     def get_user_from_client_identifier(self, client_identifier: str) -> Tuple[Optional[str], Optional[str]]:
