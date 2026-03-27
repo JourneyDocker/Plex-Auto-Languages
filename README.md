@@ -2,25 +2,6 @@
 
 Plex Auto Languages enhances your Plex experience by automatically updating the audio and subtitle settings of TV shows based on your preferences. Similar to Netflix, it remembers your language settings for each TV show without interfering with your global settings or other users' preferences.
 
-## Table of Contents
-
-- [Plex Auto Languages](#plex-auto-languages)
-  - [Table of Contents](#table-of-contents)
-  - [Features](#features)
-  - [Getting Started](#getting-started)
-    - [Requirements](#requirements)
-    - [Installation Options](#installation-options)
-      - [Docker Installation](#docker-installation)
-      - [Python Installation](#python-installation)
-  - [Configuration](#configuration)
-    - [Key Parameters](#key-parameters)
-      - [Plex Configuration](#plex-configuration)
-      - [Update Settings](#update-settings)
-      - [Notifications (Optional)](#notifications-optional)
-      - [Advanced Options](#advanced-options)
-    - [Environment Variable Summary](#environment-variable-summary)
-  - [License](#license)
-
 ## Features
 
 - **Seamless Language Selection**:
@@ -84,7 +65,7 @@ Here's an example of a minimal `docker-compose.yml` setup:
 ```yaml
 services:
   plexautolanguages:
-    image: journeyover/plex-auto-languages:main
+    image: journeyover/plex-auto-languages:latest
     environment:
       - PLEX_URL=http://plex:32400
       - PLEX_TOKEN=MY_PLEX_TOKEN
@@ -103,44 +84,82 @@ docker run -d \
   -e PLEX_TOKEN=MY_PLEX_TOKEN \
   -e TZ=Europe/Paris \
   -v ./config:/config \
-  journeyover/plex-auto-languages:main
+  journeyover/plex-auto-languages:latest
 ```
 
----
+-----
 
 #### Python Installation
 
 Follow these steps for a native Python setup:
 
-1. **Clone the Repository**:
+1.  **Clone the Repository**:
 
-   ```bash
-   git clone git@github.com:JourneyDocker/Plex-Auto-Languages.git
-   ```
+    ```bash
+    git clone https://github.com/JourneyDocker/Plex-Auto-Languages.git
+    ```
 
-2. **Install Dependencies**:
+2.  **Install Dependencies**:
 
-   ```bash
-   cd Plex-Auto-Languages
-   python3 -m pip install -r requirements.txt
-   ```
+    ```bash
+    cd Plex-Auto-Languages
+    python -m pip install -r requirements.txt
+    ```
 
-3. **Create Configuration File**:
+3.  **Create Configuration File**:
 
-   Use the template in the [default configuration file](https://github.com/JourneyDocker/Plex-Auto-Languages/blob/main/config.example.yaml) to create your own `config.yaml`. Only `plex.url` and `plex.token` are required.
+    Use the template in the [default configuration file](https://github.com/JourneyDocker/Plex-Auto-Languages/blob/main/config.example.yaml) to create your own `config.yaml`. Only `plex.url` and `plex.token` are required.
 
-4. **Run the Application**:
+4.  **Run the Application**:
 
-   ```bash
-   python3 main.py -c ./config.yaml
-   ```
+    ```bash
+    python main.py -c ./config.yaml
+    ```
+
+-----
+
+### How to Update
+
+#### Updating Docker
+
+If you are running the Docker container, update to the latest version by pulling the new image and recreating your container:
+
+1.  **Pull the latest image**:
+    ```bash
+    docker pull journeyover/plex-auto-languages:latest
+    ```
+2.  **Recreate the container**: Stop your current container and start it again using your existing `docker-compose up -d` or `docker run` command.
+
+#### Updating Python
+
+To update a native Python installation to the latest version:
+
+1.  **Pull the latest changes**:
+
+    ```bash
+    git pull
+    ```
+
+2.  **Update dependencies** (if requirements.txt has changed):
+
+    ```bash
+    python -m pip install -r requirements.txt
+    ```
+
+3.  **Review your configuration**:
+    Compare your `config.yaml` with the latest [config.example.yaml](https://github.com/JourneyDocker/Plex-Auto-Languages/blob/main/config.example.yaml) and add any new settings as needed.
+
+4.  **Restart the application**:
+    Restart PAL with your updated code and configuration.
+
+If you're migrating from an older version, consider backing up your config and following the installation steps from scratch.
 
 ## Configuration
 
 The application can be configured using either:
 
-- **Environment Variables**
-- **YAML File** (mounted at `/config/config.yaml`; see [config.example.yaml](https://github.com/JourneyDocker/Plex-Auto-Languages/blob/main/config.example.yaml) for example config)
+  - **Environment Variables**
+  - **YAML File** (mounted at `/config/config.yaml`; see [config.example.yaml](https://github.com/JourneyDocker/Plex-Auto-Languages/blob/main/config.example.yaml) for example config)
 
 ### Key Parameters
 
@@ -157,7 +176,7 @@ plex:
 ```yaml
 plexautolanguages:
   update_level: "show"          # Options: "show" (default), "season"
-  update_strategy: "all"        # Options: "all", "next" (default)
+  update_strategy: "next"       # Options: "all", "next" (default)
   trigger_on_play: true         # Update language when playing an episode
   trigger_on_scan: true         # Update language when new files are scanned
   trigger_on_activity: false    # Update language when navigating Plex (experimental)
@@ -184,46 +203,42 @@ notifications:
 ```yaml
 scheduler:
   enable: true
-  schedule_time: "04:30"
+  schedule_time: "02:00"
 data_path: ""  # Path for system/cache files
 debug: false   # Enable debug logs
 ```
 
 ### Environment Variable Summary
 
-| Environment Variable            | Default Value        | Description                                                                                                                  |
-|---------------------------------|----------------------|------------------------------------------------------------------------------------------------------------------------------|
-| `PLEX_URL`                      | *(none)*             | URL to your Plex server. Replace `IP_ADDRESS` with your actual Plex server address.                                          |
-| `PLEX_TOKEN`                    | *(none)*             | Plex authentication token.                                                                                                   |
-| `UPDATE_LEVEL`                  | `show`               | Determines whether the update applies to the entire show or just the current season. Accepted values: `show`, `season`.      |
-| `UPDATE_STRATEGY`               | `next`               | Chooses whether to update all episodes or only the next one. Accepted values: `all`, `next`.                                 |
-| `TRIGGER_ON_PLAY`               | `true`               | If set to true, playing an episode triggers a language update.                                                               |
-| `TRIGGER_ON_SCAN`               | `true`               | If set to true, scanning for new files triggers a language update.                                                           |
-| `TRIGGER_ON_ACTIVITY`           | `false`              | If set to true, browsing the Plex library triggers a language update.                                                        |
-| `REFRESH_LIBRARY_ON_SCAN`       | `true`               | Refreshes the cached library when the Plex server scans its library.                                                         |
-| `IGNORE_LABELS`                 | `PAL_IGNORE`         | Comma-separated list of Plex labels. Shows with these labels will be ignored.                                                |
-| `IGNORE_LIBRARIES`              | *(none)*             | Comma-separated list of library names that PAL will ignore when updating subtitle/audio languages                            |
-| `SCHEDULER_ENABLE`              | `true`               | Enables or disables the scheduler feature.                                                                                   |
-| `SCHEDULER_SCHEDULE_TIME`       | `02:00`              | Time (in `HH:MM` format) when the scheduler starts its task.                                                                 |
-| `NOTIFICATIONS_ENABLE`          | `false`              | Enables or disables notifications.                                                                                           |
-| `NOTIFICATIONS_APPRISE_CONFIGS` | `[]`                 | JSON array of Apprise notification configurations. See Apprise docs for more information: https://github.com/caronc/apprise. |
-| `DEBUG`                         | `false`              | Enables debug mode for verbose logging.                                                                                      |
+| Environment Variable            | Default Value | Description                                                                                                                  |
+| ------------------------------- | ------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `PLEX_URL`                      | *(none)*      | URL to your Plex server. Replace `http://plex:32400` with your actual Plex server URL.                                       |
+| `PLEX_TOKEN`                    | *(none)*      | Plex authentication token.                                                                                                   |
+| `UPDATE_LEVEL`                  | `show`        | Determines whether the update applies to the entire show or just the current season. Accepted values: `show`, `season`.      |
+| `UPDATE_STRATEGY`               | `next`        | Chooses whether to update all episodes or only the next one. Accepted values: `all`, `next`.                                 |
+| `TRIGGER_ON_PLAY`               | `true`        | If set to true, playing an episode triggers a language update.                                                               |
+| `TRIGGER_ON_SCAN`               | `true`        | If set to true, scanning for new files triggers a language update.                                                           |
+| `TRIGGER_ON_ACTIVITY`           | `false`       | If set to true, browsing the Plex library triggers a language update.                                                        |
+| `REFRESH_LIBRARY_ON_SCAN`       | `true`        | Refreshes the cached library when the Plex server scans its library.                                                         |
+| `IGNORE_LABELS`                 | `PAL_IGNORE`  | Comma-separated list of Plex labels. Shows with these labels will be ignored.                                                |
+| `IGNORE_LIBRARIES`              | *(none)*      | Comma-separated list of library names that PAL will ignore when updating subtitle/audio languages.                           |
+| `SCHEDULER_ENABLE`              | `true`        | Enables or disables the scheduler feature.                                                                                   |
+| `SCHEDULER_SCHEDULE_TIME`       | `02:00`       | Time (in `HH:MM` format) when the scheduler starts its task.                                                                 |
+| `NOTIFICATIONS_ENABLE`          | `false`       | Enables or disables notifications.                                                                                           |
+| `NOTIFICATIONS_APPRISE_CONFIGS` | `[]`          | JSON array of Apprise notification configurations. See Apprise docs for more information: https://github.com/caronc/apprise. |
+| `DEBUG`                         | `false`       | Enables debug mode for verbose logging.                                                                                      |
 
 > [!NOTE]
-> The Plex Token can also be provided as a Docker secret, the filepath of the secret must then be specified in the environment variable `PLEX_TOKEN_FILE` which defaults to `/run/secrets/plex_token`.
-
-> [!NOTE]
-> The Plex URL can also be provided as a Docker secret, the filepath of the secret must then be specified in the environment variable `PLEX_URL_FILE` which defaults to `/run/secrets/plex_url`.
-
-> [!NOTE]
-> The `NOTIFICATIONS_APPRISE_CONFIGS` Environment Variable should be set as a JSON string representing an array of notification configurations. Each configuration can include `urls`, `users`, and `events` as needed. For example:
-> ```json
-> [
->   {"urls": ["discord://webhook_id/webhook_token"]},
->   {"urls": ["gotify://hostname/token"], "users": ["MyUser1", "MyUser2"]},
->   {"urls": ["tgram://bottoken/ChatID"], "users": ["MyUser3"], "events": ["play_or_activity"]}
-> ]
-> ```
+>
+>   * **Docker Secrets:** The Plex Token and Plex URL can be provided as Docker secrets. Specify their filepaths using `PLEX_TOKEN_FILE` (defaults to `/run/secrets/plex_token`) and `PLEX_URL_FILE` (defaults to `/run/secrets/plex_url`).
+>   * **Apprise Configs:** The `NOTIFICATIONS_APPRISE_CONFIGS` variable should be a JSON string representing an array of notification configurations. Each can include `urls`, `users`, and `events`. Example:
+>     ```json
+>     [
+>       {"urls": ["discord://webhook_id/webhook_token"]},
+>       {"urls": ["gotify://hostname/token"], "users": ["MyUser1", "MyUser2"]},
+>       {"urls": ["tgram://bottoken/ChatID"], "users": ["MyUser3"], "events": ["play_or_activity"]}
+>     ]
+>     ```
 
 ## License
 
