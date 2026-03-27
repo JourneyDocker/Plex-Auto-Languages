@@ -2,6 +2,7 @@ import time
 import requests
 import itertools
 import warnings
+import fnmatch
 import concurrent.futures
 from urllib.parse import urlparse
 from typing import Union, Callable, List, Tuple, Optional
@@ -565,6 +566,36 @@ class PlexServer(UnprivilegedPlexServer):
                 return True
         return False
 
+    def should_ignore_filepath(self, episode: Episode) -> bool:
+        """
+        Check if an episode should be ignored based on its media file paths.
+
+        Compares the file paths from the episode's media parts against the
+        configured ignore_filepatterns using case-insensitive glob matching.
+
+        Args:
+            episode (Episode): The episode to check.
+
+        Returns:
+            bool: True if any file path matches an ignore pattern, False otherwise.
+        """
+        patterns = self.config.get("ignore_filepatterns")
+        # Filter out empty strings
+        patterns = [p for p in patterns if p]
+        if not patterns:
+            return False
+        try:
+            for media in episode.media:
+                for part in media.parts:
+                    if part.file:
+                        filepath_lower = part.file.lower()
+                        for pattern in patterns:
+                            if fnmatch.fnmatch(filepath_lower, pattern.lower()):
+                                return True
+        except Exception as e:
+            logger.warning(f"Error checking file patterns for episode: {e}")
+        return False
+
     def process_new_or_updated_episode(self, item_id: Union[int, str], event_type: EventType, new: bool) -> None:
         """
         Process a newly added or updated episode for all users.
@@ -691,6 +722,8 @@ class PlexServer(UnprivilegedPlexServer):
                 continue
             if self.should_ignore_show(item.show()):
                 continue
+            if self.should_ignore_filepath(item):
+                continue
             if not self.cache.should_process_recently_added(item.key, item.addedAt):
                 continue
             logger.info(f"[Scheduler] Processing newly added episode {self.get_episode_short_name(item)}")
@@ -699,6 +732,8 @@ class PlexServer(UnprivilegedPlexServer):
             if self.should_ignore_library(item.librarySectionTitle):
                 continue
             if self.should_ignore_show(item.show()):
+                continue
+            if self.should_ignore_filepath(item):
                 continue
             if not self.cache.should_process_recently_updated(item.key):
                 continue

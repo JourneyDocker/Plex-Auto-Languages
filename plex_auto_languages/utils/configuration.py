@@ -267,6 +267,10 @@ class Configuration:
         if isinstance(ignore_libraries_config, str):
             self._config["ignore_libraries"] = ignore_libraries_config.split(",")
 
+        ignore_filepatterns_config = self.get("ignore_filepatterns")
+        if isinstance(ignore_filepatterns_config, str):
+            self._config["ignore_filepatterns"] = ignore_filepatterns_config.split(",")
+
     def _validate_config(self):
         """
         Validates the configuration for required values and correct formats.
@@ -294,6 +298,9 @@ class Configuration:
             raise InvalidConfiguration
         if not isinstance(self.get("ignore_libraries"), list):
             logger.error("The 'ignore_libraries' parameter must be a list or a string-based comma separated list")
+            raise InvalidConfiguration
+        if not isinstance(self.get("ignore_filepatterns"), list):
+            logger.error("The 'ignore_filepatterns' parameter must be a list or a string-based comma separated list")
             raise InvalidConfiguration
         if self.get("scheduler.enable") and not re.match(r"^\d{2}:\d{2}$", str(self.get("scheduler.schedule_time"))):
             logger.error("A valid 'schedule_time' parameter with the format 'HH:MM' is required (ex: \"02:30\")")

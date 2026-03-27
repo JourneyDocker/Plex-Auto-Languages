@@ -130,6 +130,11 @@ class PlexActivity(PlexAlert):
             logger.debug(f"[Activity] Ignoring show: '{item.show().title}' episode: 'S{item.seasonNumber:02}E{item.episodeNumber:02}' due to Plex show labels")
             return
 
+        # Skip if the file path matches an ignore pattern
+        if plex.should_ignore_filepath(item):
+            logger.debug(f"[Activity] Ignoring show: '{item.show().title}' episode: 'S{item.seasonNumber:02}E{item.episodeNumber:02}' due to file path matching ignore pattern")
+            return
+
         # Skip if this item has already been seen in the last 3 seconds
         activity_key = (self.user_id, self.item_key)
         current_time = datetime.now()

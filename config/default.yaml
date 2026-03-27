@@ -9,6 +9,8 @@ plexautolanguages:
     - PAL_IGNORE
   ignore_libraries:
     - ""
+  ignore_filepatterns:
+    - ""
 
   plex:
     url: ""

@@ -126,6 +126,11 @@ class PlexTimeline(PlexAlert):
             logger.debug(f"[Timeline] Ignoring show: '{item.show().title}' episode: 'S{item.seasonNumber:02}E{item.episodeNumber:02}' due to Plex show labels")
             return
 
+        # Skip if the file path matches an ignore pattern
+        if plex.should_ignore_filepath(item):
+            logger.debug(f"[Timeline] Ignoring show: '{item.show().title}' episode: 'S{item.seasonNumber:02}E{item.episodeNumber:02}' due to file path matching ignore pattern")
+            return
+
         # Check if the item has been added recently
         if item.addedAt < datetime.now() - timedelta(minutes=5):
             return

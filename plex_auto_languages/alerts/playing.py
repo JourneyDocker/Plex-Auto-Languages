@@ -125,6 +125,11 @@ class PlexPlaying(PlexAlert):
             logger.debug(f"[Play Session] Ignoring show: '{item.show().title}' episode: 'S{item.seasonNumber:02}E{item.episodeNumber:02}' due to Plex show labels")
             return
 
+        # Skip if the file path matches an ignore pattern
+        if plex.should_ignore_filepath(item):
+            logger.debug(f"[Play Session] Ignoring show: '{item.show().title}' episode: 'S{item.seasonNumber:02}E{item.episodeNumber:02}' due to file path matching ignore pattern")
+            return
+
         # Skip is the session state is unchanged
         if self.session_key in plex.cache.session_states:
             cached_session_data = plex.cache.session_states[self.session_key]
