@@ -37,10 +37,10 @@ plexautolanguages:
   ignore_libraries:
     - ""
 
-  # List of glob patterns to match against media file paths
+  # List of regex patterns to match against media file paths
   # Episodes with any media file matching a pattern will be ignored
-  # Uses fnmatch-style matching (case-insensitive): * matches everything, ? matches one character
-  # Example: ["*coming.soon*", "*trailer*"] to ignore Kometa placeholder files
+  # Uses case-insensitive regex matching
+  # Example: [".*coming\.soon.*", ".*trailer.*"] to ignore Kometa placeholder files
   ignore_filepatterns:
     - ""
 

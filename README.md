@@ -187,7 +187,7 @@ plexautolanguages:
     - PAL_IGNORE
   ignore_libraries:             # Ignore these libraries when updating sub/audio language
     - ""
-  ignore_filepatterns:          # Ignore episodes whose media file path matches these glob patterns
+  ignore_filepatterns:          # Ignore episodes whose media file path matches these regex patterns
     - ""
 ```
 
@@ -228,7 +228,7 @@ debug: false   # Enable debug logs
 | `REFRESH_LIBRARY_ON_SCAN`       | `true`        | Refreshes the cached library when the Plex server scans its library.                                                         |
 | `IGNORE_LABELS`                 | `PAL_IGNORE`  | Comma-separated list of Plex labels. Shows with these labels will be ignored.                                                |
 | `IGNORE_LIBRARIES`              | *(none)*      | Comma-separated list of library names that PAL will ignore when updating subtitle/audio languages.                           |
-| `IGNORE_FILEPATTERNS`           | *(none)*      | Comma-separated list of glob patterns matched against media file paths. Episodes with matching files are ignored (e.g. `*coming.soon*,*trailer*`). |
+| `IGNORE_FILEPATTERNS`           | *(none)*      | Comma-separated list of regex patterns matched against media file paths. Episodes with matching files are ignored (e.g. `.*coming\.soon.*,.*trailer.*`). |
 | `SCHEDULER_ENABLE`              | `true`        | Enables or disables the scheduler feature.                                                                                   |
 | `SCHEDULER_SCHEDULE_TIME`       | `02:00`       | Time (in `HH:MM` format) when the scheduler starts its task.                                                                 |
 | `NOTIFICATIONS_ENABLE`          | `false`       | Enables or disables notifications.                                                                                           |

@@ -2,7 +2,7 @@ import time
 import requests
 import itertools
 import warnings
-import fnmatch
+import re
 import concurrent.futures
 from urllib.parse import urlparse
 from typing import Union, Callable, List, Tuple, Optional
@@ -573,7 +573,7 @@ class PlexServer(UnprivilegedPlexServer):
         Check if an episode should be ignored based on its media file paths.
 
         Compares the file paths from the episode's media parts against the
-        configured ignore_filepatterns using case-insensitive glob matching.
+        configured ignore_filepatterns using case-insensitive regex matching.
 
         Args:
             episode (Episode): The episode to check.
@@ -592,8 +592,11 @@ class PlexServer(UnprivilegedPlexServer):
                     if part.file:
                         filepath_lower = part.file.lower()
                         for pattern in patterns:
-                            if fnmatch.fnmatch(filepath_lower, pattern.lower()):
-                                return True
+                            try:
+                                if re.search(pattern, filepath_lower, re.IGNORECASE):
+                                    return True
+                            except re.error as e:
+                                logger.warning(f"Invalid regex pattern '{pattern}': {e}")
         except Exception as e:
             logger.warning(f"Error checking file patterns for episode: {e}")
         return False
