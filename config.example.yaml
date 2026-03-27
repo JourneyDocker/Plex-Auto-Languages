@@ -50,6 +50,10 @@ plexautolanguages:
     url: ""
     # A valid Plex Token (required)
     token: ""
+    # Maximum number of connection attempts when connecting to the Plex server, defaults to 300
+    connection_max_retries: 300
+    # Delay in seconds between connection retry attempts, defaults to 5
+    connection_retry_delay: 5
 
   scheduler:
     # Whether of not to enable the scheduler, defaults to 'true'

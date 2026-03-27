@@ -308,6 +308,12 @@ class Configuration:
         if self.get("data_path") != "" and not os.path.exists(self.get("data_path")):
             logger.error("The 'data_path' parameter must be a valid path")
             raise InvalidConfiguration
+        if not isinstance(self.get("plex.connection_max_retries"), int) or self.get("plex.connection_max_retries") < 1:
+            logger.error("The 'plex.connection_max_retries' parameter must be a positive integer")
+            raise InvalidConfiguration
+        if not isinstance(self.get("plex.connection_retry_delay"), (int, float)) or self.get("plex.connection_retry_delay") < 0:
+            logger.error("The 'plex.connection_retry_delay' parameter must be a non-negative number")
+            raise InvalidConfiguration
         logger.info("The provided configuration has been successfully validated")
 
     def _add_system_config(self):

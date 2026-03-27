@@ -167,8 +167,10 @@ The application can be configured using either:
 
 ```yaml
 plex:
-  url: "http://plex:32400"  # Required: Plex server URL
-  token: "MY_PLEX_TOKEN"    # Required: Plex Token
+  url: "http://plex:32400"       # Required: Plex server URL
+  token: "MY_PLEX_TOKEN"         # Required: Plex Token
+  connection_max_retries: 300    # Max connection attempts (default: 300)
+  connection_retry_delay: 5      # Seconds between retries (default: 5)
 ```
 
 #### Update Settings
@@ -216,6 +218,8 @@ debug: false   # Enable debug logs
 | ------------------------------- | ------------- | ---------------------------------------------------------------------------------------------------------------------------- |
 | `PLEX_URL`                      | *(none)*      | URL to your Plex server. Replace `http://plex:32400` with your actual Plex server URL.                                       |
 | `PLEX_TOKEN`                    | *(none)*      | Plex authentication token.                                                                                                   |
+| `PLEX_CONNECTION_MAX_RETRIES`   | `300`         | Maximum number of connection attempts when connecting to the Plex server.                                                    |
+| `PLEX_CONNECTION_RETRY_DELAY`   | `5`           | Delay in seconds between connection retry attempts.                                                                          |
 | `UPDATE_LEVEL`                  | `show`        | Determines whether the update applies to the entire show or just the current season. Accepted values: `show`, `season`.      |
 | `UPDATE_STRATEGY`               | `next`        | Chooses whether to update all episodes or only the next one. Accepted values: `all`, `next`.                                 |
 | `TRIGGER_ON_PLAY`               | `true`        | If set to true, playing an episode triggers a language update.                                                               |

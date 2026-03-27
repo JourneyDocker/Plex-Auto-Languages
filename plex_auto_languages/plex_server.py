@@ -315,9 +315,9 @@ class PlexServer(UnprivilegedPlexServer):
         if parsed_url.scheme == "https":
             session = SelectiveVerifySession(whitelist=[parsed_url.hostname])
 
-        super().__init__(url, token, session=session)
         self.notifier = notifier
         self.config = config
+        super().__init__(url, token, session=session)
         self._user = self._get_logged_user()
         if self._user is None:
             logger.error("Unable to find the user associated with the provided Plex Token")
@@ -357,21 +357,23 @@ class PlexServer(UnprivilegedPlexServer):
         """
         return self.connected and self._alert_listener is not None and self._alert_listener.is_alive()
 
-    @staticmethod
-    def _get_server(url: str, token: str, session: requests.Session, max_tries: int = 300, retry_delay: int = 5) -> Optional[BasePlexServer]:
+    def _get_server(self, url: str, token: str, session: requests.Session) -> Optional[BasePlexServer]:
         """
         Attempts to establish a connection to the Plex server, retrying on failure.
+
+        Reads the maximum number of retries and delay between retries from the
+        application configuration.
 
         Args:
             url (str): The URL of the Plex server.
             token (str): Authentication token for the Plex server.
             session (requests.Session): HTTP session to use for requests.
-            max_tries (int, optional): Maximum number of connection attempts. Defaults to 300.
-            retry_delay (int, optional): Delay in seconds between retry attempts. Defaults to 5.
 
         Returns:
             Optional[BasePlexServer]: A PlexAPI server instance if successful, None after exhausting all attempts.
         """
+        max_tries = self.config.get("plex.connection_max_retries")
+        retry_delay = self.config.get("plex.connection_retry_delay")
         for attempt in range(1, max_tries + 1):
             try:
                 return BasePlexServer(url, token, session=session)
