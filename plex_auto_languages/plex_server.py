@@ -397,14 +397,22 @@ class PlexServer(UnprivilegedPlexServer):
         """
         if self._plex is None:
             return None
-        try:
-            plex_username = self._plex.myPlexAccount().username
-            for account in self._plex.systemAccounts():
-                if account.name == plex_username:
-                    return account
-        except Exception as e:
-            logger.error(f"Error getting logged user: {str(e)}")
-            return None
+        max_tries = self.config.get("plex.connection_max_retries")
+        retry_delay = self.config.get("plex.connection_retry_delay")
+        for attempt in range(1, max_tries + 1):
+            try:
+                plex_username = self._plex.myPlexAccount().username
+                for account in self._plex.systemAccounts():
+                    if account.name == plex_username:
+                        return account
+                return None
+            except RequestsConnectionError:
+                logger.warning(f"Connection error while fetching logged user. Retrying... (Attempt {attempt}/{max_tries})")
+            except Exception as e:
+                logger.error(f"Error getting logged user: {str(e)}")
+                return None
+            time.sleep(retry_delay)
+        logger.error(f"Failed to retrieve logged user after {max_tries} attempts")
         return None
 
     def save_cache(self) -> None:
@@ -451,7 +459,7 @@ class PlexServer(UnprivilegedPlexServer):
                     users.append(user)
             self.cache.set_instance_users(users)
             return users
-        except BadRequest:
+        except (BadRequest, RequestsConnectionError):
             logger.warning("Unable to retrieve the users of the account, falling back to cache")
             return self.cache.get_instance_users(check_validity=False)
 

@@ -11,7 +11,7 @@ from plex_auto_languages.utils.configuration import Configuration
 from plex_auto_languages.utils.healthcheck import HealthcheckServer
 
 # Version information
-__version__ = "1.5.1-dev"
+__version__ = "1.5.1-dev2"
 
 class PlexAutoLanguages:
     """
@@ -242,8 +242,14 @@ class PlexAutoLanguages:
                 logger.info("Application initialization completed successfully")
                 self.reconnect_delay = 1  # Reset backoff on successful connection
             except Exception as e:
-                logger.error(f"Critical error during initialization: {str(e)}")
-                raise
+                logger.error(f"Initialization failed: {str(e)}")
+                self.initializing = False
+                if self.stop_signal:
+                    break
+                logger.info(f"Retrying in {self.reconnect_delay}s...")
+                sleep(self.reconnect_delay)
+                self.reconnect_delay = min(self.reconnect_delay * 2, 300)  # Exponential backoff, max 5 minutes
+                continue
             finally:
                 self.initializing = False # Clear initializing flag
 
