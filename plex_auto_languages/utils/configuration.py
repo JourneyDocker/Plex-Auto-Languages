@@ -70,7 +70,7 @@ def deep_dict_update(original, update):
     return original
 
 
-def env_dict_update(original, var_name: str = ""):
+def env_dict_update(original, var_name: str = "", dot_prefix: str = "", changes: list = None):
     """
     Updates dictionary values from environment variables.
 
@@ -80,24 +80,29 @@ def env_dict_update(original, var_name: str = ""):
 
     Args:
         original (dict): The dictionary to update with environment variables
-        var_name (str): The parent variable name prefix for nested dictionaries
+        var_name (str): The parent variable name prefix for nested dictionaries (underscore-separated, uppercase)
+        dot_prefix (str): The parent key path in dot-notation (e.g. "plex") for display purposes
+        changes (list): Accumulator list for collected change strings; created at the top level if None
 
     Returns:
-        dict: The updated dictionary with values from environment variables
+        tuple[dict, list]: The updated dictionary and the list of change strings
     """
+    if changes is None:
+        changes = []
 
     for key, value in original.items():
         new_var_name = (f"{var_name}_{key}" if var_name != "" else key).upper()
+        dot_key = f"{dot_prefix}.{key}" if dot_prefix else key
         if isinstance(value, Mapping):
-            original[key] = env_dict_update(original[key], new_var_name)
+            original[key], _ = env_dict_update(original[key], new_var_name, dot_key, changes)
         elif new_var_name in os.environ:
             if "schedule_time" in new_var_name.lower():
                 original[key] = os.environ.get(new_var_name)
             else:
                 original[key] = yaml.safe_load(os.environ.get(new_var_name))
-            masked = mask_value(new_var_name, original[key])
-            logger.info(f"Setting from Env: {new_var_name.lower()}={masked}")
-    return original
+            masked = mask_value(dot_key, original[key])
+            changes.append(f"{dot_key}={masked}")
+    return original, changes
 
 
 def is_docker():
@@ -222,7 +227,9 @@ class Configuration:
         Uses env_dict_update to recursively update configuration values
         from corresponding environment variables.
         """
-        self._config = env_dict_update(self._config)
+        self._config, settings = env_dict_update(self._config)
+        if settings:
+            logger.info(f"Settings from Env: {', '.join(settings)}")
 
     def _override_plex_secrets_from_files(self):
         """
