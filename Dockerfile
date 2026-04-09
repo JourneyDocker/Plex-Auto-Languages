@@ -1,5 +1,5 @@
 # Stage 0: Base
-FROM python:3.14.3-alpine AS base
+FROM python:3.14.4-alpine AS base
 
 # Set the working directory
 WORKDIR /app
