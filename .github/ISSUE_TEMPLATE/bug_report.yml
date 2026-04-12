@@ -58,7 +58,7 @@ body:
   attributes:
     label: Logs
     description: |
-      Please provide your full log related to this issue.
+      Please provide your full logs! I can not help you without it as it gives me indications of what is going wrong as well as your configuration.
     render: markdown
   validations:
     required: true
