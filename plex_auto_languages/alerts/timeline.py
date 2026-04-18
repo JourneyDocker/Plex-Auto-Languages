@@ -93,7 +93,7 @@ class PlexTimeline(PlexAlert):
         Processes the timeline event and triggers appropriate actions.
 
         This method handles timeline events by:
-        1. Filtering out irrelevant events (metadata/media state changes, non-library events)
+        1. Filtering out irrelevant events (media state changes, non-library events)
         2. Verifying the media is a TV show episode
         3. Checking if the library or show should be ignored
         4. Checking if the episode was recently added
@@ -106,7 +106,7 @@ class PlexTimeline(PlexAlert):
         Returns:
             None
         """
-        if self.has_metadata_state or self.has_media_state:
+        if self.has_media_state:
             return
         if self.identifier != "com.plexapp.plugins.library" or self.state != 5 or self.entry_type == -1:
             return
@@ -129,6 +129,22 @@ class PlexTimeline(PlexAlert):
         # Skip if the file path matches an ignore pattern
         if plex.should_ignore_filepath(item):
             logger.debug(f"[Timeline] Ignoring show: '{item.show().title}' episode: 'S{item.seasonNumber:02}E{item.episodeNumber:02}' due to file path matching ignore pattern")
+            return
+
+        if self.has_metadata_state:
+            item.reload()
+
+            # Skip metadata-only events that did not change episode media parts
+            if not plex.cache.did_episode_parts_change(item):
+                return
+
+            # Check if the updated item has already been processed
+            if not plex.cache.should_process_recently_updated(item.key):
+                return
+
+            # Change tracks for all users
+            logger.info(f"[Timeline] Processing updated episode {plex.get_episode_short_name(item)}")
+            plex.process_new_or_updated_episode(item.key, EventType.UPDATED_EPISODE, False)
             return
 
         # Check if the item has been added recently

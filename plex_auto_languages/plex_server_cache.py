@@ -115,6 +115,40 @@ class PlexServerCache:
         self.newly_updated[episode_id] = datetime.now()
         return True
 
+    def did_episode_parts_change(self, episode) -> bool:
+        """
+        Check if an episode's media parts have changed since last check.
+
+        Uses the existing episode_parts cache to detect file changes.
+        This is used to determine if a metadataState event represents
+        a real file upgrade (e.g., Sonarr) or just metadata refresh.
+
+        Args:
+            episode: The episode to check
+
+        Returns:
+            bool: True if parts changed, False otherwise
+        """
+        # Build current part key list from iterParts()
+        current_parts = []
+        for part in episode.iterParts():
+            if part.key:
+                current_parts.append(part.key)
+
+        # Get previous cached parts before updating cache
+        previous_parts = self.episode_parts.get(episode.key)
+
+        # Update the cache
+        self.episode_parts[episode.key] = current_parts
+        self.save()  # Persist the updated parts
+
+        # If no previous cached value, just store and return False
+        if not previous_parts:
+            return False
+
+        # Compare old vs new part sets
+        return set(current_parts) != set(previous_parts)
+
     def refresh_library_cache(self) -> tuple[list, list]:
         """
         Refreshes the cached library data by scanning all episodes in the Plex library.
