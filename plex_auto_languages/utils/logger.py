@@ -1,4 +1,8 @@
 import logging
+import os
+from logging.handlers import RotatingFileHandler
+
+from plex_auto_languages.utils.shared import get_platform_app_directory, is_docker
 
 
 class CustomFormatter(logging.Formatter):
@@ -49,29 +53,60 @@ class CustomFormatter(logging.Formatter):
         return formatter.format(record)
 
 
+def _get_log_directory() -> str:
+    """
+    Determines the log directory based on platform and container environment.
+
+    Returns:
+        str: Absolute path to the log directory.
+    """
+    if is_docker():
+        return "/logs"
+
+    app_directory = get_platform_app_directory("PlexAutoLanguages")
+    if app_directory is None:
+        return os.path.join(os.getcwd(), "logs")
+    return os.path.join(app_directory, "logs")
+
+
 def init_logger() -> logging.Logger:
     """
     Initialize and configure the application logger.
 
-    Creates a logger with a custom formatter that outputs color-coded logs
-    to the console. Ensures handlers are only added once and prevents
-    log propagation to avoid duplicate entries.
+    Creates a logger with both console and rotating file handlers. Ensures
+    handlers are only added once and prevents propagation to avoid duplicates.
 
     Returns:
         logging.Logger: Configured logger instance ready for use.
     """
     logger = logging.getLogger("Logger")
+    logger.setLevel(logging.INFO)
 
-    # Avoid adding handlers multiple times
-    if not logger.hasHandlers():
-        logger.setLevel(logging.INFO)
+    has_console_handler = any(type(handler) is logging.StreamHandler for handler in logger.handlers)
+    if not has_console_handler:
         logger_stream_handler = logging.StreamHandler()
         logger_stream_handler.setFormatter(CustomFormatter())
         logger.addHandler(logger_stream_handler)
 
-    # Prevent propagation to root logger to avoid duplicate logs
-    logger.propagate = False
+    has_file_handler = any(type(handler) is RotatingFileHandler for handler in logger.handlers)
+    if not has_file_handler:
+        try:
+            log_directory = _get_log_directory()
+            os.makedirs(log_directory, exist_ok=True)
+            log_file = os.path.join(log_directory, "plex_auto_languages.log")
 
+            logger_file_handler = RotatingFileHandler(
+                filename=log_file,
+                maxBytes=10 * 1024 * 1024,
+                backupCount=10,
+                encoding="utf-8"
+            )
+            logger_file_handler.setFormatter(logging.Formatter(CustomFormatter.fmt))
+            logger.addHandler(logger_file_handler)
+        except OSError as exception:
+            logger.warning(f"Could not initialize file logging: {exception}")
+
+    logger.propagate = False
     return logger
 
 

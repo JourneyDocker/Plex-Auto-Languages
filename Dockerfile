@@ -37,7 +37,7 @@ COPY --from=build /opt/venv /opt/venv
 COPY --from=build /app .
 
 # Define mount points
-VOLUME /config
+VOLUME /config /logs
 
 # Set the entrypoint and default command
 ENTRYPOINT ["/sbin/tini", "--"]

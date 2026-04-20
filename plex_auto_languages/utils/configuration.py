@@ -1,13 +1,11 @@
 import os
 import re
-import sys
-import pathlib
 import logging
 from collections.abc import Mapping
 import yaml
-import warnings
 
 from plex_auto_languages.utils.logger import get_logger
+from plex_auto_languages.utils.shared import get_platform_app_directory, is_docker
 from plex_auto_languages.exceptions import InvalidConfiguration
 
 
@@ -103,26 +101,6 @@ def env_dict_update(original, var_name: str = "", dot_prefix: str = "", changes:
             masked = mask_value(dot_key, original[key])
             changes.append(f"{dot_key}={masked}")
     return original, changes
-
-
-def is_docker():
-    """
-    Determines if the application is running inside a Docker container.
-
-    Checks multiple indicators to detect Docker environment:
-    1. Presence of /.dockerenv file
-    2. Docker references in /proc/self/cgroup
-    3. CONTAINERIZED environment variable set to "true"
-
-    Returns:
-        bool: True if running in Docker, False otherwise
-    """
-    path = "/proc/self/cgroup"
-    return (
-        os.path.exists("/.dockerenv") or
-        os.path.isfile(path) and any("docker" in line for line in open(path, "r", encoding="utf-8")) or
-        os.getenv("CONTAINERIZED", "False").lower() == "true"
-    )
 
 
 class Configuration:
@@ -353,19 +331,9 @@ class Configuration:
         Warns:
             If running on an unsupported operating system
         """
-        home = pathlib.Path.home()
         data_path = self.get("data_path")
         if data_path is not None and data_path != "" and os.path.exists(data_path) and os.path.isdir(data_path):
             return os.path.join(data_path, app_name)
         if is_docker():
             return "/config"
-        if sys.platform == "win32":
-            return str(home / f"AppData/Roaming/{app_name}")
-        if sys.platform == "linux":
-            return str(home / f".local/share/{app_name}")
-        if sys.platform == "darwin":
-            return str(home / f"Library/Application Support/{app_name}")
-        if os.uname()[0] == "FreeBSD":
-            return str(home / f".local/share/{app_name}")
-        warnings.warn("Warning: Unsupported Operating System!")
-        return None
+        return get_platform_app_directory(app_name)

@@ -72,6 +72,7 @@ services:
       - TZ=Europe/Paris
     volumes:
       - ./config:/config
+      - ./logs:/logs
 ```
 
 **Run with Docker CLI:**
@@ -84,6 +85,7 @@ docker run -d \
   -e PLEX_TOKEN=MY_PLEX_TOKEN \
   -e TZ=Europe/Paris \
   -v ./config:/config \
+  -v ./logs:/logs \
   journeyover/plex-auto-languages:latest
 ```
 
