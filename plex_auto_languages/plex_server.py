@@ -419,7 +419,7 @@ class PlexServer(UnprivilegedPlexServer):
         """
         Save the current state of the server cache to disk.
         """
-        self.cache.save()
+        self.cache.save(force=True)
 
     def start_alert_listener(self, error_callback: Callable) -> None:
         """

@@ -61,6 +61,9 @@ class PlexServerCache:
         self._plex = plex
         self._lock = threading.RLock()
         self._last_refresh = datetime.fromtimestamp(0)
+        self._save_pending = False
+        self._save_in_progress = False
+        self._last_save_at = datetime.fromtimestamp(0)
 
         # Alerts cache (in-memory only)
         self.session_states = {}     # session_key: session_state
@@ -83,7 +86,7 @@ class PlexServerCache:
 
         # Initialization: try loading persisted cache data.
         if not self._load():
-            self.save()
+            self.save(force=True)
             logger.info(
                 "[Cache] Scanning all episodes from the Plex library. "
                 "This action should only take a few seconds but can take several minutes for larger libraries"
@@ -143,6 +146,7 @@ class PlexServerCache:
         conn = sqlite3.connect(self._db_path, timeout=30)
         conn.execute("PRAGMA journal_mode=WAL;")
         conn.execute("PRAGMA synchronous=NORMAL;")
+        conn.execute("PRAGMA busy_timeout=30000;")
         return conn
 
     def _initialize_database(self) -> None:
@@ -319,7 +323,7 @@ class PlexServerCache:
 
         self._last_refresh = self._parse_datetime(cache.get("last_refresh"), datetime.fromtimestamp(0)) or datetime.fromtimestamp(0)
 
-        self.save()
+        self.save(force=True)
 
         migrated_path = f"{self._legacy_cache_file_path}.json.migrated"
         try:
@@ -398,7 +402,9 @@ class PlexServerCache:
 
             previous_parts = self.episode_parts.get(episode.key)
             self.episode_parts[episode.key] = current_parts
-            self.save()
+            parts_changed = previous_parts is not None and set(current_parts) != set(previous_parts)
+            if parts_changed:
+                self.save()
 
             if not previous_parts:
                 return False
@@ -442,7 +448,7 @@ class PlexServerCache:
                 self.episode_parts = new_episode_parts
                 logger.debug("[Cache] Done refreshing library cache")
                 self._last_refresh = datetime.now()
-                self.save()
+                self.save(force=True)
                 return added, updated
             finally:
                 self._is_refreshing = False
@@ -512,55 +518,83 @@ class PlexServerCache:
         if str(user_id) in self._instance_user_tokens:
             del self._instance_user_tokens[str(user_id)]
 
-    def save(self) -> None:
+    def save(self, force: bool = False) -> None:
         """
         Saves the current cache state to persistent storage.
 
         Serializes the in-memory cache state into SQLite by snapshot-writing episode rows
-        and updating system metadata values.
+        and updating system metadata values. Concurrent save requests are coalesced so
+        only one database write runs at a time.
 
         Raises:
             Exception: Logs an error if saving fails but doesn't re-raise the exception.
         """
         with self._lock:
-            logger.debug(f"[Cache] Saving server cache to SQLite at {self._db_path}")
-            try:
-                with self._connect() as conn:
-                    conn.execute("DELETE FROM episodes")
+            if self._save_in_progress:
+                self._save_pending = True
+                return
 
+            self._save_in_progress = True
+
+        try:
+            while True:
+                with self._lock:
                     episode_keys = set(self.episode_parts.keys()) | set(self.newly_added.keys()) | set(self.newly_updated.keys())
+                    episode_rows = []
                     for episode_key in episode_keys:
                         part_keys = self.episode_parts.get(episode_key, [])
                         if not isinstance(part_keys, list):
                             part_keys = []
 
-                        conn.execute(
-                            """
-                            INSERT INTO episodes (episode_key, newly_added_at, newly_updated_at, part_keys_json)
-                            VALUES (?, ?, ?, ?)
-                            """,
+                        episode_rows.append(
                             (
                                 episode_key,
                                 self._datetime_to_str(self.newly_added.get(episode_key)),
                                 self._datetime_to_str(self.newly_updated.get(episode_key)),
                                 json.dumps(part_keys),
-                            ),
+                            )
                         )
 
                     last_refresh_value = self._datetime_to_str(self._last_refresh) or datetime.fromtimestamp(0).isoformat()
-                    conn.execute(
-                        """
-                        INSERT INTO system_metadata (key, value)
-                        VALUES (?, ?)
-                        ON CONFLICT(key) DO UPDATE SET value = excluded.value
-                        """,
-                        ("last_refresh", last_refresh_value),
-                    )
-                    conn.commit()
 
-                logger.debug("[Cache] Server cache successfully saved")
-            except Exception as e:
-                logger.error(f"[Cache] Failed to save server cache at {self._db_path}: {e}")
+                logger.debug(f"[Cache] Saving server cache to SQLite at {self._db_path}")
+                try:
+                    with self._connect() as conn:
+                        conn.execute("DELETE FROM episodes")
+
+                        for episode_row in episode_rows:
+                            conn.execute(
+                                """
+                                INSERT INTO episodes (episode_key, newly_added_at, newly_updated_at, part_keys_json)
+                                VALUES (?, ?, ?, ?)
+                                """,
+                                episode_row,
+                            )
+
+                        conn.execute(
+                            """
+                            INSERT INTO system_metadata (key, value)
+                            VALUES (?, ?)
+                            ON CONFLICT(key) DO UPDATE SET value = excluded.value
+                            """,
+                            ("last_refresh", last_refresh_value),
+                        )
+                        conn.commit()
+
+                    with self._lock:
+                        self._last_save_at = datetime.now()
+                        if self._save_pending:
+                            self._save_pending = False
+                            continue
+
+                    logger.debug("[Cache] Server cache successfully saved")
+                    break
+                except Exception as e:
+                    logger.error(f"[Cache] Failed to save server cache at {self._db_path}: {e}")
+                    break
+        finally:
+            with self._lock:
+                self._save_in_progress = False
 
     def clean_idle_caches(self) -> None:
         """
