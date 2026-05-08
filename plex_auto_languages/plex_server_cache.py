@@ -106,6 +106,11 @@ class PlexServerCache:
         except Exception:
             return default
 
+    def _ensure_cache_dir(self, cache_dir: str) -> str:
+        cache_dir = os.path.normpath(cache_dir)
+        os.makedirs(cache_dir, exist_ok=True)
+        return cache_dir
+
     def _get_cache_paths(self) -> tuple[str, str]:
         """
         Determines and prepares cache paths.
@@ -119,17 +124,10 @@ class PlexServerCache:
             Exception: If the cache directory cannot be created.
         """
         data_dir = self._plex.config.get("data_dir")
-        cache_dir = os.path.join(data_dir, "cache")
-        legacy_json_path = os.path.join(cache_dir, self._plex.unique_id)
-        db_path = f"{legacy_json_path}.sqlite3"
-
-        if not os.path.exists(cache_dir):
-            try:
-                os.makedirs(cache_dir)
-                logger.debug(f"[Cache] Created cache directory at {cache_dir}")
-            except Exception as e:
-                logger.error(f"[Cache] Failed to create cache directory at {cache_dir}: {e}")
-                raise
+        cache_dir = self._ensure_cache_dir(os.path.join(data_dir, "cache"))
+        legacy_json_path = os.path.normpath(os.path.join(cache_dir, self._plex.unique_id))
+        db_path = os.path.normpath(f"{legacy_json_path}.sqlite3")
+        logger.debug(f"[Cache] Cache paths prepared: cache_dir={cache_dir}, legacy_json_path={legacy_json_path}, db_path={db_path}")
 
         return legacy_json_path, db_path
 
@@ -140,8 +138,14 @@ class PlexServerCache:
         Returns:
             sqlite3.Connection: Configured SQLite connection.
         """
-        conn = sqlite3.connect(self._db_path, timeout=30)
-        conn.execute("PRAGMA journal_mode=WAL;")
+        cache_dir = self._ensure_cache_dir(os.path.dirname(self._db_path))
+        db_path = os.path.normpath(self._db_path)
+        logger.debug(
+            f"[Cache] Opening SQLite cache connection: db_path={db_path}, cache_dir={cache_dir}, "
+            f"db_exists={os.path.exists(db_path)}, db_readable={os.access(db_path, os.R_OK)}, "
+            f"dir_readable={os.access(cache_dir, os.R_OK)}, dir_writable={os.access(cache_dir, os.W_OK)}, dir_executable={os.access(cache_dir, os.X_OK)}"
+        )
+        conn = sqlite3.connect(db_path, timeout=30)
         conn.execute("PRAGMA synchronous=NORMAL;")
         return conn
 
@@ -223,12 +227,21 @@ class PlexServerCache:
                     ("last_refresh",),
                 ).fetchone()
         except sqlite3.DatabaseError as e:
-            logger.warning(f"[Cache] SQLite cache appears corrupted, clearing database before retry: {e}")
-            try:
-                os.remove(self._db_path)
-                logger.debug(f"[Cache] Removed corrupted cache database at {self._db_path}")
-            except Exception as remove_error:
-                logger.error(f"[Cache] Failed to remove corrupted cache database at {self._db_path}: {remove_error}")
+            error_code = getattr(e, "sqlite_errorcode", None)
+            is_corruption = error_code in {
+                getattr(sqlite3, "SQLITE_CORRUPT", None),
+                getattr(sqlite3, "SQLITE_NOTADB", None),
+            } or any(indicator in str(e).lower() for indicator in ("malformed", "not a database", "corrupt"))
+
+            if is_corruption:
+                logger.warning(f"[Cache] SQLite cache appears corrupted, clearing database before retry: {e}")
+                try:
+                    os.remove(self._db_path)
+                    logger.debug(f"[Cache] Removed corrupted cache database at {self._db_path}")
+                except Exception as remove_error:
+                    logger.error(f"[Cache] Failed to remove corrupted cache database at {self._db_path}: {remove_error}")
+            else:
+                logger.error(f"[Cache] Failed to load SQLite cache at {self._db_path}: {e}")
             return False
 
         self.newly_added = {}
@@ -523,8 +536,15 @@ class PlexServerCache:
             Exception: Logs an error if saving fails but doesn't re-raise the exception.
         """
         with self._lock:
-            logger.debug(f"[Cache] Saving server cache to SQLite at {self._db_path}")
-            try:
+            logger.debug(
+                f"[Cache] Saving server cache to SQLite at {self._db_path}, "
+                f"db_exists={os.path.exists(self._db_path)}, db_readable={os.access(self._db_path, os.R_OK)}, "
+                f"db_writable={os.access(self._db_path, os.W_OK)}, parent_dir={os.path.dirname(self._db_path)}, "
+                f"parent_exists={os.path.exists(os.path.dirname(self._db_path))}, "
+                f"parent_writable={os.access(os.path.dirname(self._db_path), os.W_OK) if os.path.dirname(self._db_path) else False}"
+            )
+
+            def _write_cache() -> None:
                 with self._connect() as conn:
                     conn.execute("DELETE FROM episodes")
 
@@ -558,9 +578,30 @@ class PlexServerCache:
                     )
                     conn.commit()
 
+            try:
+                _write_cache()
                 logger.debug("[Cache] Server cache successfully saved")
-            except Exception as e:
-                logger.error(f"[Cache] Failed to save server cache at {self._db_path}: {e}")
+            except sqlite3.OperationalError as e:
+                error_code = getattr(e, "sqlite_errorcode", None)
+                is_cantopen = error_code == getattr(sqlite3, "SQLITE_CANTOPEN", None) or "unable to open database file" in str(e).lower()
+                if not is_cantopen:
+                    logger.error(f"[Cache] Failed to save server cache at {self._db_path}: {e}")
+                    return
+
+                logger.warning(f"[Cache] SQLite cache open failed, retrying once: {e}")
+                logger.debug(
+                    f"[Cache] Retry diagnostics: db_path={self._db_path}, db_exists={os.path.exists(self._db_path)}, "
+                    f"db_readable={os.access(self._db_path, os.R_OK)}, db_writable={os.access(self._db_path, os.W_OK)}, "
+                    f"parent_dir={os.path.dirname(self._db_path)}, parent_exists={os.path.exists(os.path.dirname(self._db_path))}, "
+                    f"parent_readable={os.access(os.path.dirname(self._db_path), os.R_OK) if os.path.dirname(self._db_path) else False}, "
+                    f"parent_writable={os.access(os.path.dirname(self._db_path), os.W_OK) if os.path.dirname(self._db_path) else False}"
+                )
+                try:
+                    self._ensure_cache_dir(os.path.dirname(self._db_path))
+                    _write_cache()
+                    logger.debug("[Cache] Server cache successfully saved after retry")
+                except Exception as retry_error:
+                    logger.error(f"[Cache] Failed to save server cache at {self._db_path} after retry: {retry_error}")
 
     def clean_idle_caches(self) -> None:
         """
