@@ -42,6 +42,31 @@ class PlexAlert:
         """
         return self._message
 
+    def is_relevant(self, plex: 'PlexServer') -> bool:
+        """
+        Cheap, side-effect-free check the alert handler calls BEFORE enqueuing
+        an alert, so alerts whose process() would immediately early-return are
+        never queued.
+
+        Plex emits high-frequency timeline notifications, the vast majority of
+        which are no-ops (mediaState updates, non-library events). On a busy or
+        multi-user server these can arrive faster than the single consumer
+        thread drains them; with an unbounded queue they accumulate without
+        limit. Filtering the obvious no-ops here keeps them off the queue.
+
+        Default is True. Only alert types whose process() begins with
+        side-effect-free, network-free early-returns may override this, and the
+        override MUST mirror those early-returns exactly and MUST NOT mutate
+        plex.cache or perform any I/O (it runs on the websocket-reader thread).
+
+        Args:
+            plex (PlexServer): The Plex server instance (unused by default).
+
+        Returns:
+            bool: True if the alert should be queued and processed.
+        """
+        return True
+
     def process(self, plex: 'PlexServer') -> None:
         """
         Process the alert event and perform appropriate actions.
