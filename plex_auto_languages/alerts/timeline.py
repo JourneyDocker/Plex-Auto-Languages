@@ -88,6 +88,26 @@ class PlexTimeline(PlexAlert):
         """
         return self._message.get("type", None)
 
+    def is_relevant(self, plex: 'PlexServer') -> bool:
+        """
+        Mirror of the two leading, side-effect-free, network-free early-returns
+        in process(): mediaState events and non-library / wrong-state / type==-1
+        events are pure no-ops. These are the high-frequency timeline
+        notifications that can flood an unbounded alert queue, so they are
+        dropped at enqueue time. process() still re-applies these exact checks
+        before any fetch_item/reload/cache call, so this only removes
+        never-actionable alerts and cannot change which episodes get tracks set.
+
+        NOTE: this must stay a literal mirror of process()'s first two
+        early-returns. If a side-effecting/network call is ever moved ahead of
+        them, or the state/type conditions change, update this override too.
+        """
+        if self.has_media_state:
+            return False
+        if self.identifier != "com.plexapp.plugins.library" or self.state != 5 or self.entry_type == -1:
+            return False
+        return True
+
     def process(self, plex: 'PlexServer') -> None:
         """
         Processes the timeline event and triggers appropriate actions.

@@ -2,7 +2,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 from time import sleep
 import http.client
-from queue import Queue, Empty
+from queue import Queue, Empty, Full
 from threading import Thread, Event
 from requests.exceptions import ReadTimeout, ConnectionError, HTTPError, RequestException
 from urllib3.exceptions import ReadTimeoutError, ProtocolError
@@ -48,11 +48,34 @@ class PlexAlertHandler():
         self._trigger_on_play = trigger_on_play
         self._trigger_on_scan = trigger_on_scan
         self._trigger_on_activity = trigger_on_activity
-        self._alerts_queue = Queue()
+        # Bounded so a consumer that cannot keep up with Plex's notification
+        # rate can never accumulate alerts without limit. The pre-filter in
+        # __call__ keeps the steady-state depth near zero; this is the hard cap.
+        self._alerts_queue = Queue(maxsize=10000)
+        # Single-producer (AlertListener) counter; the stats thread only reads it.
+        self._dropped_alerts = 0
         self._stop_event = Event()
         self._processor_thread = Thread(target=self._process_alerts)
         self._processor_thread.daemon = True
         self._processor_thread.start()
+        # Log queue health (depth + total drops) every 5 minutes so the bound is
+        # observable from the container logs without a heap inspection.
+        self._stats_thread = Thread(target=self._log_queue_stats)
+        self._stats_thread.daemon = True
+        self._stats_thread.start()
+
+    def _log_queue_stats(self) -> None:
+        """
+        Periodic queue-health log (every 5 min). Under the pre-filter the depth
+        should stay near zero; a rising depth or any dropped alerts means the
+        single consumer cannot keep up with Plex's alert rate. Read-only on
+        shared state; exits promptly when stopped.
+        """
+        while not self._stop_event.wait(300):
+            logger.info(
+                "Alert queue depth=%d/%d dropped_total=%d"
+                % (self._alerts_queue.qsize(), self._alerts_queue.maxsize,
+                   self._dropped_alerts))
 
     def stop(self) -> None:
         """
@@ -94,7 +117,26 @@ class PlexAlertHandler():
 
         for alert_message in message[alert_field]:
             alert = alert_class(alert_message)
-            self._alerts_queue.put(alert)
+            # Drop alerts whose process() is a pure no-op (side-effect-free,
+            # network-free early-return) before they ever reach the queue. This
+            # is what stops the unbounded timeline-notification accumulation at
+            # the source. Only PlexTimeline overrides is_relevant; playing /
+            # activity / status inherit the default (True) so their cache side
+            # effects are preserved.
+            if not alert.is_relevant(self._plex):
+                continue
+            # Never block the producer (the plexapi AlertListener callback
+            # thread): if the consumer is so far behind the bounded queue is
+            # full, drop and count rather than stall the websocket reader.
+            try:
+                self._alerts_queue.put_nowait(alert)
+            except Full:
+                self._dropped_alerts += 1
+                if self._dropped_alerts % 1000 == 1:
+                    logger.warning(
+                        "Alert queue full (maxsize=%d); dropped %d alert(s) so "
+                        "far - the consumer thread is not keeping up with Plex "
+                        "notifications." % (self._alerts_queue.maxsize, self._dropped_alerts))
 
     def _process_alerts(self) -> None:
         """
