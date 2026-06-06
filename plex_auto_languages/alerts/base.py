@@ -67,6 +67,25 @@ class PlexAlert:
         """
         return True
 
+    def dedupe_key(self, plex: 'PlexServer'):
+        """Optional key the alert handler uses to collapse a rapid burst of identical
+        alerts before they are queued, so one misbehaving item cannot flood the bounded
+        queue.
+
+        Default ``None`` disables dedup for this alert type. Only **library-level** alert
+        types (whose ``process()`` fans out to all users) whose repeated delivery is
+        redundant may override this. **Per-user** alert types (playing/activity) MUST NOT
+        override it: two users can legitimately produce the same item key, and dropping
+        one would skip that user's track change.
+
+        Args:
+            plex (PlexServer): The Plex server instance (unused by default).
+
+        Returns:
+            A hashable key, or None to never dedupe this alert.
+        """
+        return None
+
     def process(self, plex: 'PlexServer') -> None:
         """
         Process the alert event and perform appropriate actions.
