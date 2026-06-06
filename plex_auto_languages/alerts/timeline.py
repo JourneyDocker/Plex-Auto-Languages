@@ -108,6 +108,19 @@ class PlexTimeline(PlexAlert):
             return False
         return True
 
+    def dedupe_key(self, plex: 'PlexServer'):
+        """A single item can emit state=5 timeline events many times per second while
+        Plex repeatedly (re)generates its preview thumbnails / analysis. These are
+        library-level (process() fans out to all users) and process() re-fetches the
+        item's current state, so collapsing a rapid burst of the SAME item to one enqueue
+        per window is safe. The kind (has_metadata_state) is part of the key because
+        'newly added' and 'metadata update' events take different process() branches and
+        must not be collapsed into each other."""
+        try:
+            return (self.item_id, self.has_metadata_state)
+        except (TypeError, ValueError):
+            return None
+
     def process(self, plex: 'PlexServer') -> None:
         """
         Processes the timeline event and triggers appropriate actions.
