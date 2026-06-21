@@ -130,16 +130,39 @@ class PlexPlaying(PlexAlert):
             logger.debug(f"[Play Session] Ignoring show: '{item.show().title}' episode: 'S{item.seasonNumber:02}E{item.episodeNumber:02}' due to file path matching ignore pattern")
             return
 
-        # Skip is the session state is unchanged
+        # Read selected streams before deciding whether this event is a duplicate.
+        # A stream change can happen while the session state remains "playing".
+        item.reload()
+        audio_stream, subtitle_stream = plex.get_selected_streams(item)
+        selected_streams_ids = (
+            audio_stream.id if audio_stream is not None else None,
+            subtitle_stream.id if subtitle_stream is not None else None
+        )
+
+        cached_session_state = None
         if self.session_key in plex.cache.session_states:
             cached_session_data = plex.cache.session_states[self.session_key]
-            if isinstance(cached_session_data, tuple) and cached_session_data[0] == self.session_state:
-                return
-            elif not isinstance(cached_session_data, tuple) and cached_session_data == self.session_state:
-                return
-        logger.debug(f"[Play Session] "
-                     f"Session: {self.session_key} | State: '{self.session_state}' | User id: {user_id} | Episode: {item}")
+            if isinstance(cached_session_data, tuple):
+                cached_session_state = cached_session_data[0]
+            else:
+                cached_session_state = cached_session_data
+
+        cached_streams_ids = plex.cache.default_streams.get(item.key)
+
+        # Skip only if both the session state and selected streams are unchanged.
+        if cached_session_state == self.session_state and cached_streams_ids == selected_streams_ids:
+            return
+
+        logger.debug(
+            f"[Play Session] Session: {self.session_key} | "
+            f"State: '{self.session_state}' | "
+            f"User id: {user_id} | "
+            f"Episode: {item} | "
+            f"Streams: {selected_streams_ids}"
+        )
+
         plex.cache.session_states[self.session_key] = (self.session_state, datetime.now())
+        plex.cache.default_streams[item.key] = selected_streams_ids
 
         # Reset cache if the session is stopped
         if self.session_state == "stopped":
@@ -148,17 +171,7 @@ class PlexPlaying(PlexAlert):
                 del plex.cache.session_states[self.session_key]
             if self.client_identifier in plex.cache.user_clients:
                 del plex.cache.user_clients[self.client_identifier]
-
-        # Skip if selected streams are unchanged
-        item.reload()
-        audio_stream, subtitle_stream = plex.get_selected_streams(item)
-        selected_streams_ids = (
-            audio_stream.id if audio_stream is not None else None,
-            subtitle_stream.id if subtitle_stream is not None else None
-        )
-        if item.key in plex.cache.default_streams and plex.cache.default_streams[item.key] == selected_streams_ids:
             return
-        plex.cache.default_streams[item.key] = selected_streams_ids
 
         # Limit the size of default_streams to prevent memory leak
         if len(plex.cache.default_streams) > 10000:

@@ -185,11 +185,15 @@ class TrackChanges():
                 # If no matching subtitle found, only reset to None when the reference had NO subtitle selected.
                 if current_subtitle_stream is not None and matching_subtitle_stream is None:
                     if self._subtitle_stream is None:
-                        # reference explicitly has subtitles off -> clear current subtitle
+                        # Reference explicitly has subtitles off -> clear current subtitle.
+                        self._changes.append((episode, part, SubtitleStream.STREAMTYPE, None))
+                    elif self.is_forced_subtitle(self._subtitle_stream):
+                        # Reference uses forced subtitles, but this part has no matching forced subtitle.
+                        # Clear the current subtitle instead of keeping a regular subtitle from the same language.
                         self._changes.append((episode, part, SubtitleStream.STREAMTYPE, None))
                     else:
-                        # reference had a subtitle but we couldn't find a matching one for this part.
-                        # Do not clear — leave the user's current setting in place.
+                        # Reference had a regular subtitle but no matching subtitle was found for this part.
+                        # Keep the current subtitle to avoid disabling subtitles unexpectedly.
                         pass
 
                 if matching_subtitle_stream is not None and \
@@ -409,6 +413,25 @@ class TrackChanges():
         logger.debug(f"[Language Update] Audio scores: {score_str}")
         return streams[scores.index(max(scores))]
 
+    def is_forced_subtitle(self, stream: SubtitleStream) -> bool:
+        title = getattr(stream, "title", None)
+        display_title = getattr(stream, "displayTitle", None)
+        extended_display_title = getattr(stream, "extendedDisplayTitle", None)
+        forced_flag = bool(getattr(stream, "forced", False))
+    
+        searchable_text = " ".join([
+            title or "",
+            display_title or "",
+            extended_display_title or "",
+        ]).lower()
+    
+        forced_from_title = (
+            "forced" in searchable_text
+        )
+    
+        result = forced_flag or forced_from_title
+        return result
+        
     def _match_subtitle_stream(self, subtitle_streams: List[SubtitleStream]) -> Optional[SubtitleStream]:
         """
         Find the best matching subtitle stream from a list of available streams.
@@ -430,14 +453,14 @@ class TrackChanges():
             match_hearing_impaired_only = False
             language_code = self._audio_stream.languageCode
         else:
-            match_forced_only = self._subtitle_stream.forced
+            match_forced_only = self.is_forced_subtitle(self._subtitle_stream)
             match_hearing_impaired_only = self._subtitle_stream.hearingImpaired
             language_code = self._subtitle_stream.languageCode
 
         # We only want streams with the same language code
         streams = [s for s in subtitle_streams if s.languageCode == language_code]
         if match_forced_only:
-            streams = [s for s in streams if s.forced]
+            streams = [s for s in streams if self.is_forced_subtitle(s)]
         if match_hearing_impaired_only:
             streams = [s for s in streams if s.hearingImpaired]
 
@@ -451,7 +474,7 @@ class TrackChanges():
         scores = [0] * len(streams)
         for index, stream in enumerate(streams):
             if self._subtitle_stream is not None:
-                if self._subtitle_stream.forced == stream.forced:
+                if self.is_forced_subtitle(self._subtitle_stream) == self.is_forced_subtitle(stream):
                     scores[index] += 3
                 if self._subtitle_stream.hearingImpaired == stream.hearingImpaired:
                     scores[index] += 3
