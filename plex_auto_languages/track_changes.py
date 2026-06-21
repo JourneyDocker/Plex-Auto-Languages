@@ -28,7 +28,7 @@ class TrackChanges():
         _computed (bool): Whether changes have been computed.
     """
 
-    def __init__(self, username: str, reference: Episode, event_type: EventType):
+    def __init__(self, username: str, reference: Episode, event_type: EventType, subtitle_none_behavior: str):
         """
         Initialize a TrackChanges instance.
 
@@ -40,6 +40,7 @@ class TrackChanges():
         self._reference = reference
         self._username = username
         self._event_type = event_type
+        self._subtitle_none_behavior = subtitle_none_behavior
         self._audio_stream, self._subtitle_stream = self._get_selected_streams(reference)
         self._changes = []
         self._description = ""
@@ -449,6 +450,8 @@ class TrackChanges():
         if self._subtitle_stream is None:
             if self._audio_stream is None:
                 return None
+            if self._subtitle_none_behavior == "disabled":
+                return None
             match_forced_only = True
             match_hearing_impaired_only = False
             language_code = self._audio_stream.languageCode
@@ -461,6 +464,8 @@ class TrackChanges():
         streams = [s for s in subtitle_streams if s.languageCode == language_code]
         if match_forced_only:
             streams = [s for s in streams if self.is_forced_subtitle(s)]
+        else:
+            streams = [s for s in streams if not self.is_forced_subtitle(s)]
         if match_hearing_impaired_only:
             streams = [s for s in streams if s.hearingImpaired]
 
@@ -476,6 +481,8 @@ class TrackChanges():
             if self._subtitle_stream is not None:
                 if self.is_forced_subtitle(self._subtitle_stream) == self.is_forced_subtitle(stream):
                     scores[index] += 3
+                else:
+                    scores[index] -= 10
                 if self._subtitle_stream.hearingImpaired == stream.hearingImpaired:
                     scores[index] += 3
                 if self._subtitle_stream.codec is not None and stream.codec is not None and \
@@ -621,7 +628,7 @@ class NewOrUpdatedTrackChanges():
             episode (Episode): The episode to apply changes to.
         """
         self._episode = episode
-        track_changes = TrackChanges(username, reference, self._event_type)
+        track_changes = TrackChanges(username, reference, self._event_type, plex.config.subtitle_none_behavior)
         track_changes.compute([episode])
         changes_were_made = track_changes.has_changes
         track_changes.apply()

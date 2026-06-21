@@ -5,6 +5,7 @@ plexautolanguages:
   trigger_on_scan: true
   trigger_on_activity: false
   refresh_library_on_scan: true
+  subtitle_none_behavior: "forced"
   ignore_labels:
     - PAL_IGNORE
   ignore_libraries:
