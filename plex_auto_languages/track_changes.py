@@ -464,8 +464,6 @@ class TrackChanges():
         streams = [s for s in subtitle_streams if s.languageCode == language_code]
         if match_forced_only:
             streams = [s for s in streams if self.is_forced_subtitle(s)]
-        else:
-            streams = [s for s in streams if not self.is_forced_subtitle(s)]
         if match_hearing_impaired_only:
             streams = [s for s in streams if s.hearingImpaired]
 
@@ -481,8 +479,6 @@ class TrackChanges():
             if self._subtitle_stream is not None:
                 if self.is_forced_subtitle(self._subtitle_stream) == self.is_forced_subtitle(stream):
                     scores[index] += 3
-                else:
-                    scores[index] -= 10
                 if self._subtitle_stream.hearingImpaired == stream.hearingImpaired:
                     scores[index] += 3
                 if self._subtitle_stream.codec is not None and stream.codec is not None and \
