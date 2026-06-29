@@ -183,10 +183,19 @@ class TrackChanges():
                 matching_subtitle_stream = self._match_subtitle_stream(part.subtitleStreams())
 
                 # If no matching subtitle found, only reset to None when the reference had NO subtitle selected.
+                # If the reference episode has no subtitle streams at all, do not propagate "None" to other episodes.
+                # This avoids disabling subtitles on episodes that do have subtitle streams while the reference episode
+                # simply has burned-in subtitles or no subtitle track available.
+                reference_has_subtitle_streams = len(self._reference.subtitleStreams()) > 0
+                
                 if current_subtitle_stream is not None and matching_subtitle_stream is None:
                     if self._subtitle_stream is None:
-                        # Reference explicitly has subtitles off -> clear current subtitle.
-                        self._changes.append((episode, part, SubtitleStream.STREAMTYPE, None))
+                        if reference_has_subtitle_streams:
+                            # Reference has subtitle streams and subtitles are explicitly off -> clear current subtitle.
+                            self._changes.append((episode, part, SubtitleStream.STREAMTYPE, None))
+                        else:
+                            # Reference has no subtitle streams at all -> do not propagate "None".
+                            pass
                     elif self.is_forced_subtitle(self._subtitle_stream):
                         # Reference uses forced subtitles, but this part has no matching forced subtitle.
                         # Clear the current subtitle instead of keeping a regular subtitle from the same language.
