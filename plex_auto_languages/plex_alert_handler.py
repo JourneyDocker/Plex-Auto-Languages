@@ -1,6 +1,6 @@
 from __future__ import annotations
 from typing import TYPE_CHECKING
-from time import sleep
+from time import sleep, monotonic
 import http.client
 from queue import Queue, Empty, Full
 from threading import Thread, Event
@@ -14,6 +14,13 @@ if TYPE_CHECKING:
 
 
 logger = get_logger()
+
+# A single item can re-emit the same timeline event many times per second while Plex
+# regenerates its preview thumbnails / analysis; collapsing repeats of the same dedupe_key
+# within this window keeps one item from flooding the queue. Short enough that legitimately
+# distinct changes are never suppressed (process() re-fetches current state and the cache
+# guards against reprocessing anyway).
+DEDUPE_WINDOW_SECONDS = 5.0
 
 
 class PlexAlertHandler():
@@ -54,6 +61,12 @@ class PlexAlertHandler():
         self._alerts_queue = Queue(maxsize=10000)
         # Single-producer (AlertListener) counter; the stats thread only reads it.
         self._dropped_alerts = 0
+        # Producer-thread-only dedup state: collapse a rapid burst of identical alerts
+        # (same dedupe_key seen within the window) so one misbehaving item cannot flood
+        # the queue. Only the single AlertListener thread touches it, so no lock needed.
+        self._recent_keys = {}
+        self._deduped_alerts = 0
+        self._dedupe_window = DEDUPE_WINDOW_SECONDS
         self._stop_event = Event()
         self._processor_thread = Thread(target=self._process_alerts)
         self._processor_thread.daemon = True
@@ -73,9 +86,33 @@ class PlexAlertHandler():
         """
         while not self._stop_event.wait(300):
             logger.info(
-                "Alert queue depth=%d/%d dropped_total=%d"
+                "Alert queue depth=%d/%d dropped_total=%d deduped_total=%d"
                 % (self._alerts_queue.qsize(), self._alerts_queue.maxsize,
-                   self._dropped_alerts))
+                   self._dropped_alerts, self._deduped_alerts))
+
+    def _is_duplicate(self, alert) -> bool:
+        """Return True if this alert repeats a dedupe_key already seen within the window
+        (a fixed, non-sliding window: the key is re-armed on the first event after each
+        window expires, so a sustained flood still re-enqueues the item once per window
+        and never starves real reprocessing). Runs only on the producer thread."""
+        key = alert.dedupe_key(self._plex)
+        if key is None:
+            return False
+        now = monotonic()
+        last = self._recent_keys.get(key)
+        if last is not None and (now - last) < self._dedupe_window:
+            self._deduped_alerts += 1
+            return True
+        self._recent_keys[key] = now
+        if len(self._recent_keys) > 2048:
+            self._prune_recent_keys(now)
+        return False
+
+    def _prune_recent_keys(self, now: float) -> None:
+        """Drop expired dedup entries so the map stays bounded under a burst of many
+        distinct items (e.g. a large library import)."""
+        cutoff = now - self._dedupe_window
+        self._recent_keys = {k: t for k, t in self._recent_keys.items() if t >= cutoff}
 
     def stop(self) -> None:
         """
@@ -124,6 +161,10 @@ class PlexAlertHandler():
             # activity / status inherit the default (True) so their cache side
             # effects are preserved.
             if not alert.is_relevant(self._plex):
+                continue
+            # Collapse a rapid burst of identical alerts (one item re-emitting the same
+            # event many times per second) before it can flood the bounded queue.
+            if self._is_duplicate(alert):
                 continue
             # Never block the producer (the plexapi AlertListener callback
             # thread): if the consumer is so far behind the bounded queue is
