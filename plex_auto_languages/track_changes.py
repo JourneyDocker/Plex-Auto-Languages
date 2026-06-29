@@ -170,6 +170,7 @@ class TrackChanges():
         logger.debug(f"[Language Update] Checking language update for show '{self._reference.show().title}' "
                      f"and user '{self._username}' based on episode: 'S{self._reference.seasonNumber:02}E{self._reference.episodeNumber:02}'")
         self._changes = []
+        reference_has_subtitle_streams = len(self._reference.subtitleStreams()) > 0
         for episode in episodes:
             episode.reload()
             for part in episode.iterParts():
@@ -186,7 +187,6 @@ class TrackChanges():
                 # If the reference episode has no subtitle streams at all, do not propagate "None" to other episodes.
                 # This avoids disabling subtitles on episodes that do have subtitle streams while the reference episode
                 # simply has burned-in subtitles or no subtitle track available.
-                reference_has_subtitle_streams = len(self._reference.subtitleStreams()) > 0
                 
                 if current_subtitle_stream is not None and matching_subtitle_stream is None:
                     if self._subtitle_stream is None:
