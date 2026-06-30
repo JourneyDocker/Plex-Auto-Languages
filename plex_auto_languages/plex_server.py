@@ -672,7 +672,7 @@ class PlexServer(UnprivilegedPlexServer):
             episode (Episode): The episode to modify.
             event_type (EventType): The type of event that triggered this change.
         """
-        track_changes = TrackChanges(username, episode, event_type)
+        track_changes = TrackChanges(username, episode, event_type, self.config.get("subtitle_none_behavior"))
         # Get episodes to update
         episodes = track_changes.get_episodes_to_update(self.config.get("update_level"), self.config.get("update_strategy"))
 
