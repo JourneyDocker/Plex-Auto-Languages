@@ -170,6 +170,7 @@ class TrackChanges():
         logger.debug(f"[Language Update] Checking language update for show '{self._reference.show().title}' "
                      f"and user '{self._username}' based on episode: 'S{self._reference.seasonNumber:02}E{self._reference.episodeNumber:02}'")
         self._changes = []
+        reference_has_subtitle_streams = len(self._reference.subtitleStreams()) > 0
         for episode in episodes:
             episode.reload()
             for part in episode.iterParts():
@@ -183,10 +184,18 @@ class TrackChanges():
                 matching_subtitle_stream = self._match_subtitle_stream(part.subtitleStreams())
 
                 # If no matching subtitle found, only reset to None when the reference had NO subtitle selected.
+                # If the reference episode has no subtitle streams at all, do not propagate "None" to other episodes.
+                # This avoids disabling subtitles on episodes that do have subtitle streams while the reference episode
+                # simply has burned-in subtitles or no subtitle track available.
+                
                 if current_subtitle_stream is not None and matching_subtitle_stream is None:
                     if self._subtitle_stream is None:
-                        # Reference explicitly has subtitles off -> clear current subtitle.
-                        self._changes.append((episode, part, SubtitleStream.STREAMTYPE, None))
+                        if reference_has_subtitle_streams:
+                            # Reference has subtitle streams and subtitles are explicitly off -> clear current subtitle.
+                            self._changes.append((episode, part, SubtitleStream.STREAMTYPE, None))
+                        else:
+                            # Reference has no subtitle streams at all -> do not propagate "None".
+                            pass
                     elif self.is_forced_subtitle(self._subtitle_stream):
                         # Reference uses forced subtitles, but this part has no matching forced subtitle.
                         # Clear the current subtitle instead of keeping a regular subtitle from the same language.
