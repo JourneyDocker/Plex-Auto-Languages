@@ -255,6 +255,16 @@ class Configuration:
         ignore_filepatterns_config = self.get("ignore_filepatterns")
         if isinstance(ignore_filepatterns_config, str):
             self._config["ignore_filepatterns"] = ignore_filepatterns_config.split(",")
+            
+        schedule_days_config = self.get("scheduler.schedule_days")
+        if schedule_days_config is None:
+            self._config["scheduler"]["schedule_days"] = []
+        elif isinstance(schedule_days_config, str):
+            self._config["scheduler"]["schedule_days"] = [
+                day.strip()
+                for day in schedule_days_config.split(",")
+                if day.strip()
+            ]
 
     def _validate_config(self):
         """
@@ -269,36 +279,76 @@ class Configuration:
         if self.get("plex.url") == "":
             logger.error("A Plex URL is required")
             raise InvalidConfiguration
+
         if self.get("plex.token") == "":
             logger.error("A Plex Token is required")
             raise InvalidConfiguration
+
         if self.get("update_level") not in ["show", "season"]:
             logger.error("The 'update_level' parameter must be either 'show' or 'season'")
             raise InvalidConfiguration
+
         if self.get("update_strategy") not in ["all", "next"]:
             logger.error("The 'update_strategy' parameter must be either 'all' or 'next'")
             raise InvalidConfiguration
+
         if not isinstance(self.get("ignore_labels"), list):
             logger.error("The 'ignore_labels' parameter must be a list or a string-based comma separated list")
             raise InvalidConfiguration
+
         if not isinstance(self.get("ignore_libraries"), list):
             logger.error("The 'ignore_libraries' parameter must be a list or a string-based comma separated list")
             raise InvalidConfiguration
+
         if not isinstance(self.get("ignore_filepatterns"), list):
             logger.error("The 'ignore_filepatterns' parameter must be a list or a string-based comma separated list")
             raise InvalidConfiguration
+
         if self.get("scheduler.enable") and not re.match(r"^\d{2}:\d{2}$", str(self.get("scheduler.schedule_time"))):
             logger.error("A valid 'schedule_time' parameter with the format 'HH:MM' is required (ex: \"02:30\")")
             raise InvalidConfiguration
+
+        valid_schedule_days = [
+            "monday",
+            "tuesday",
+            "wednesday",
+            "thursday",
+            "friday",
+            "saturday",
+            "sunday",
+        ]
+
+        if self.get("scheduler.enable"):
+            schedule_days = self.get("scheduler.schedule_days")
+
+            if not isinstance(schedule_days, list):
+                logger.error("The 'scheduler.schedule_days' parameter must be a list or a comma-separated string")
+                raise InvalidConfiguration
+
+            invalid_days = [
+                day for day in schedule_days
+                if not isinstance(day, str) or day.strip().lower() not in valid_schedule_days
+            ]
+
+            if len(invalid_days) > 0:
+                logger.error(
+                    "The 'scheduler.schedule_days' parameter contains invalid values. "
+                    f"Accepted values are: {', '.join(valid_schedule_days)}"
+                )
+                raise InvalidConfiguration
+
         if self.get("data_path") != "" and not os.path.exists(self.get("data_path")):
             logger.error("The 'data_path' parameter must be a valid path")
             raise InvalidConfiguration
+
         if not isinstance(self.get("plex.connection_max_retries"), int) or self.get("plex.connection_max_retries") < 1:
             logger.error("The 'plex.connection_max_retries' parameter must be a positive integer")
             raise InvalidConfiguration
+
         if not isinstance(self.get("plex.connection_retry_delay"), (int, float)) or self.get("plex.connection_retry_delay") < 0:
             logger.error("The 'plex.connection_retry_delay' parameter must be a non-negative number")
             raise InvalidConfiguration
+
         logger.info("The provided configuration has been successfully validated")
 
     def _add_system_config(self):

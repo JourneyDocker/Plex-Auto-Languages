@@ -86,7 +86,9 @@ class PlexAutoLanguages:
         self.scheduler = None
         if self.config.get("scheduler.enable"):
             self.scheduler = Scheduler(
-                self.config.get("scheduler.schedule_time"), self.scheduler_callback
+                self.config.get("scheduler.schedule_time"),
+                self.scheduler_callback,
+                self.config.get("scheduler.schedule_days")
             )
 
         # Placeholder for Plex server interactions.
