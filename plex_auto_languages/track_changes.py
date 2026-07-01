@@ -182,6 +182,12 @@ class TrackChanges():
                 # Audio stream
                 matching_audio_stream = self._match_audio_stream(audio_streams)
 
+                current_audio_is_commentary = (
+                    current_audio_stream is not None and
+                    current_audio_stream.title is not None and
+                    "commentary" in current_audio_stream.title.lower()
+                )
+
                 # If the reference audio stream cannot be matched on this part, do not apply
                 # the reference subtitle directly. However, if the reference has no subtitle selected,
                 # try to fall back to a regular subtitle matching the reference audio language.
@@ -191,7 +197,12 @@ class TrackChanges():
                 # Target: JP audio only + FR subtitles
                 # Result: keep JP audio and select regular FR subtitles.
                 if self._audio_stream is not None and matching_audio_stream is None:
-                    if self._subtitle_stream is None:
+                    if current_audio_is_commentary:
+                        logger.debug(f"[Language Update] Skipping subtitle changes for show '{episode.show().title}' "
+                                     f"episode 'S{episode.seasonNumber:02}E{episode.episodeNumber:02}' "
+                                     f"and user '{self.username}' because the current audio stream is commentary "
+                                     f"and no matching audio stream was found")
+                    elif self._subtitle_stream is None:
                         fallback_subtitle_stream = self._match_regular_subtitle_stream_by_language(
                             part.subtitleStreams(),
                             self._audio_stream.languageCode
