@@ -239,9 +239,9 @@ class TrackChanges():
                 # If the reference episode has no subtitle streams at all, do not propagate "None" to other episodes.
                 # This avoids disabling subtitles on episodes that do have subtitle streams while the reference episode
                 # simply has burned-in subtitles or no subtitle track available.
-                if current_subtitle_stream is not None and matching_subtitle_stream is None:
+                if matching_subtitle_stream is None:
                     if self._subtitle_stream is None:
-                        if reference_has_subtitle_streams:
+                        if current_subtitle_stream is not None and reference_has_subtitle_streams:
                             # Reference has subtitle streams and subtitles are explicitly off -> clear current subtitle.
                             self._changes.append((episode, part, SubtitleStream.STREAMTYPE, None))
                         else:
@@ -249,8 +249,20 @@ class TrackChanges():
                             pass
                     elif self.is_forced_subtitle(self._subtitle_stream):
                         # Reference uses forced subtitles, but this part has no matching forced subtitle.
-                        # Clear the current subtitle instead of keeping a regular subtitle from the same language.
-                        self._changes.append((episode, part, SubtitleStream.STREAMTYPE, None))
+                        # Try to fall back to a regular subtitle with the same language before disabling subtitles.
+                        fallback_subtitle_stream = self._match_regular_subtitle_stream_by_language(
+                            part.subtitleStreams(),
+                            self._subtitle_stream.languageCode
+                        )
+
+                        if fallback_subtitle_stream is not None:
+                            if current_subtitle_stream is None or fallback_subtitle_stream.id != current_subtitle_stream.id:
+                                self._changes.append((episode, part, SubtitleStream.STREAMTYPE, fallback_subtitle_stream))
+                                logger.debug(f"[Language Update] Applying regular subtitle fallback for show '{episode.show().title}' "
+                                             f"episode 'S{episode.seasonNumber:02}E{episode.episodeNumber:02}' "
+                                             f"and user '{self.username}' because no matching forced subtitle was found")
+                        elif current_subtitle_stream is not None:
+                            self._changes.append((episode, part, SubtitleStream.STREAMTYPE, None))
                     else:
                         # Reference had a regular subtitle but no matching subtitle was found for this part.
                         # Keep the current subtitle to avoid disabling subtitles unexpectedly.
