@@ -249,18 +249,32 @@ class TrackChanges():
                             pass
                     elif self.is_forced_subtitle(self._subtitle_stream):
                         # Reference uses forced subtitles, but this part has no matching forced subtitle.
-                        # Try to fall back to a regular subtitle with the same language before disabling subtitles.
-                        fallback_subtitle_stream = self._match_regular_subtitle_stream_by_language(
-                            part.subtitleStreams(),
-                            self._subtitle_stream.languageCode
+                        # If audio and subtitle languages are different, fall back to a regular subtitle
+                        # in the same subtitle language. If they are the same language, disabling subtitles
+                        # is more natural than selecting a full regular subtitle.
+                        audio_language_code = self._audio_stream.languageCode if self._audio_stream is not None else None
+                        subtitle_language_code = self._subtitle_stream.languageCode
+
+                        should_try_regular_fallback = (
+                            audio_language_code is not None and
+                            subtitle_language_code is not None and
+                            audio_language_code != subtitle_language_code
                         )
 
-                        if fallback_subtitle_stream is not None:
-                            if current_subtitle_stream is None or fallback_subtitle_stream.id != current_subtitle_stream.id:
-                                self._changes.append((episode, part, SubtitleStream.STREAMTYPE, fallback_subtitle_stream))
-                                logger.debug(f"[Language Update] Applying regular subtitle fallback for show '{episode.show().title}' "
-                                             f"episode 'S{episode.seasonNumber:02}E{episode.episodeNumber:02}' "
-                                             f"and user '{self.username}' because no matching forced subtitle was found")
+                        if should_try_regular_fallback:
+                            fallback_subtitle_stream = self._match_regular_subtitle_stream_by_language(
+                                part.subtitleStreams(),
+                                subtitle_language_code
+                            )
+
+                            if fallback_subtitle_stream is not None:
+                                if current_subtitle_stream is None or fallback_subtitle_stream.id != current_subtitle_stream.id:
+                                    self._changes.append((episode, part, SubtitleStream.STREAMTYPE, fallback_subtitle_stream))
+                                    logger.debug(f"[Language Update] Applying regular subtitle fallback for show '{episode.show().title}' "
+                                                 f"episode 'S{episode.seasonNumber:02}E{episode.episodeNumber:02}' "
+                                                 f"and user '{self.username}' because no matching forced subtitle was found")
+                            elif current_subtitle_stream is not None:
+                                self._changes.append((episode, part, SubtitleStream.STREAMTYPE, None))
                         elif current_subtitle_stream is not None:
                             self._changes.append((episode, part, SubtitleStream.STREAMTYPE, None))
                     else:
