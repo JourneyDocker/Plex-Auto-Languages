@@ -13,6 +13,13 @@ class Scheduler(Thread):
     """
     A threaded scheduler that executes a callback function at a specified time.
 
+    This class extends Thread to run the scheduler in the background, allowing
+    the application to perform other tasks while waiting for scheduled events.
+    The scheduler can be gracefully shut down when needed.
+
+    Attributes:
+        _stop_event (Event): Threading event used to signal the scheduler to stop.
+    
     If no schedule days are provided, the callback runs every day.
     If schedule days are provided, the callback runs only on those days.
     """
@@ -62,6 +69,12 @@ class Scheduler(Thread):
     def run(self) -> None:
         """
         Start the scheduler loop.
+
+        This method is called when the thread is started. It continuously checks
+        for pending scheduled tasks and runs them when due, until shutdown is called.
+
+        Returns:
+            None
         """
         logger.info("Starting scheduler")
         while not self._stop_event.is_set():
@@ -71,6 +84,11 @@ class Scheduler(Thread):
     def shutdown(self) -> None:
         """
         Gracefully stop the scheduler.
+
+        Sets the stop event flag to signal the scheduler loop to terminate.
+
+        Returns:
+            None
         """
         logger.info("Stopping scheduler")
         schedule.clear()
