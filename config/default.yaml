@@ -21,6 +21,7 @@ plexautolanguages:
   scheduler:
     enable: true
     schedule_time: "02:00"
+    schedule_days: []
 
   notifications:
     enable: false

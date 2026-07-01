@@ -59,8 +59,21 @@ plexautolanguages:
     # Whether of not to enable the scheduler, defaults to 'true'
     # The scheduler will perform a deeper analysis of all recently played TV Shows
     enable: true
-    # The time at which the scheduler start its task with the format 'HH:MM', defaults to '02:00'
+
+    # The time at which the scheduler starts its task with the format 'HH:MM', defaults to '02:00'
     schedule_time: "02:00"
+
+    # Days on which the scheduler should run.
+    # Leave empty to run every day.
+    # Accepted values:
+    #   - monday
+    #   - tuesday
+    #   - wednesday
+    #   - thursday
+    #   - friday
+    #   - saturday
+    #   - sunday
+    schedule_days: []
 
   notifications:
     # Whether or not to enable the notifications through Apprise, defaults to 'false'
