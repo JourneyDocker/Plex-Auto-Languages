@@ -40,11 +40,11 @@ class Scheduler(Thread):
         super().__init__()
         self._stop_event = Event()
 
-        normalized_days = [
+        normalized_days = list(dict.fromkeys([
             day.strip().lower()
             for day in (days or [])
             if isinstance(day, str) and day.strip()
-        ]
+        ]))
 
         if len(normalized_days) == 0:
             schedule.every().day.at(time_of_day).do(callback)
