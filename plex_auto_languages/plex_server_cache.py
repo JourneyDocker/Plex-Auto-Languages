@@ -418,6 +418,11 @@ class PlexServerCache:
         Updates the episode_parts dictionary with current data from the Plex server.
         Identifies episodes that have been added or updated since the last refresh.
 
+        On a cold cache there is nothing to diff against, so no changes are collected
+        and both returned lists are empty. The only caller in that situation discards
+        the return value anyway, and collecting would mean retaining every Episode in
+        the library to report the whole thing as "added".
+
         Returns:
             tuple[list, list]: A tuple containing two lists:
                 - List of newly added episodes
@@ -434,11 +439,20 @@ class PlexServerCache:
                 added = []
                 updated = []
                 new_episode_parts = {}
+                # A cold cache diffs against nothing, so every episode would land in
+                # `added` and be retained for a result the caller throws away.
+                collect_changes = bool(self.episode_parts)
 
-                for episode in self._plex.episodes():
+                # Iterate lazily: holding the whole library at once costs >1GB on
+                # large libraries, which is enough to get the process OOM-killed
+                # before the refresh completes.
+                for episode in self._plex.iter_episodes():
                     part_list = new_episode_parts.setdefault(episode.key, [])
                     for part in episode.iterParts():
                         part_list.append(part.key)
+
+                    if not collect_changes:
+                        continue
 
                     if episode.key in self.episode_parts and set(self.episode_parts[episode.key]) != set(part_list):
                         updated.append(episode)

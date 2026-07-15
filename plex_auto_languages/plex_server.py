@@ -5,7 +5,7 @@ import warnings
 import re
 import concurrent.futures
 from urllib.parse import urlparse
-from typing import Union, Callable, List, Tuple, Optional
+from typing import Union, Callable, Iterator, List, Tuple, Optional
 from datetime import datetime, timedelta
 from requests import ConnectionError as RequestsConnectionError
 from urllib3.exceptions import InsecureRequestWarning
@@ -155,24 +155,69 @@ class UnprivilegedPlexServer():
         except NotFound:
             return None
 
+    def iter_episodes(self, page_size: int = 1000) -> Iterator[Episode]:
+        """
+        Iterate over all episodes from non-ignored libraries, one page at a time.
+
+        Each page is released once consumed, so peak memory stays flat regardless
+        of library size. Prefer this over :meth:`episodes` when episodes are
+        consumed one at a time, as that method holds the whole library at once.
+
+        Args:
+            page_size (int): Number of episodes to request per page.
+
+        Yields:
+            Episode: Episodes from non-ignored Plex libraries.
+        """
+        if hasattr(self, 'should_ignore_library'):
+            # For PlexServer instances that have the should_ignore_library method
+            sections = self.get_show_sections()
+        else:
+            # For UnprivilegedPlexServer instances or fallback. Episodes only ever
+            # live in show sections, so this covers the same items as the previous
+            # library-wide query without requesting the whole library at once.
+            sections = [s for s in self._plex.library.sections() if isinstance(s, ShowSection)]
+
+        for section in sections:
+            container_start = 0
+            while True:
+                # `maxresults` is required, not redundant: without it fetchItems()
+                # paginates internally up to the section's total size and returns
+                # the whole thing in one list, which is the behaviour this method
+                # exists to avoid. Capping it to one page keeps this loop in charge.
+                # Sorting by addedAt keeps episodes imported mid-scan after the
+                # cursor, so they are picked up at the tail rather than shifting
+                # the offsets of pages that have not been read yet.
+                page = section.search(
+                    libtype="episode",
+                    sort="addedAt:asc",
+                    container_start=container_start,
+                    container_size=page_size,
+                    maxresults=page_size
+                )
+                if not page:
+                    break
+                yield from page
+                # Advance by what was actually returned rather than by page_size:
+                # a short page mid-section would otherwise leave a permanent gap,
+                # and a skipped episode is not harmless here. It gets evicted from
+                # episode_parts, so the next refresh sees it as newly added and
+                # re-applies the show's track selection over every user's manual
+                # choice.
+                container_start += len(page)
+
     def episodes(self) -> List[Episode]:
         """
         Get all episodes from non-ignored libraries in the Plex server.
 
+        Note:
+            This holds every episode in memory at once. Prefer :meth:`iter_episodes`
+            when the episodes can be consumed one at a time.
+
         Returns:
             List[Episode]: A list of all episodes in non-ignored Plex libraries.
         """
-        if hasattr(self, 'should_ignore_library'):
-            # For PlexServer instances that have the should_ignore_library method
-            non_ignored_sections = self.get_show_sections()
-            episodes = []
-            for section in non_ignored_sections:
-                section_episodes = section.all(libtype="episode", container_size=1000)
-                episodes.extend(section_episodes)
-            return episodes
-        else:
-            # For UnprivilegedPlexServer instances or fallback
-            return self._plex.library.all(libtype="episode", container_size=1000)
+        return list(self.iter_episodes())
 
     def get_recently_added_episodes(self, minutes: int) -> List[Episode]:
         """
