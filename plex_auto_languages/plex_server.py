@@ -21,6 +21,7 @@ from plex_auto_languages.plex_alert_handler import PlexAlertHandler
 from plex_auto_languages.plex_alert_listener import PlexAlertListener
 from plex_auto_languages.track_changes import TrackChanges, NewOrUpdatedTrackChanges
 from plex_auto_languages.utils.notifier import Notifier
+from plex_auto_languages.episode_ref import EpisodeRef
 from plex_auto_languages.plex_server_cache import PlexServerCache
 from plex_auto_languages.constants import EventType
 from plex_auto_languages.exceptions import UserNotFound
@@ -607,6 +608,17 @@ class PlexServer(UnprivilegedPlexServer):
             bool: True if the library should be ignored, False otherwise.
         """
         return section_title in self.config.get("ignore_libraries")
+
+    def get_recently_added_episode_refs(self, minutes: int) -> List[EpisodeRef]:
+        """
+        Get refs for episodes added in the last `minutes` minutes.
+
+        Returns refs rather than Episodes so this shares one shape with
+        refresh_library_cache(). Its only consumer (the library-scan handler)
+        does not check filepaths, so part files are not collected.
+        """
+        return [EpisodeRef.from_episode(episode)
+                for episode in self.get_recently_added_episodes(minutes)]
 
     @staticmethod
     def format_ref_name(show_title: str | None, season_number: int | None,
