@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING
 
 from dateutil.parser import isoparse
 
+from plex_auto_languages.episode_ref import EpisodeRef
 from plex_auto_languages.utils.logger import get_logger
 
 if TYPE_CHECKING:
@@ -424,9 +425,9 @@ class PlexServerCache:
         the library to report the whole thing as "added".
 
         Returns:
-            tuple[list, list]: A tuple containing two lists:
-                - List of newly added episodes
-                - List of updated episodes
+            tuple[list[EpisodeRef], list[EpisodeRef]]: A tuple containing two lists:
+                - Refs for newly added episodes
+                - Refs for updated episodes
         """
         with self._lock:
             if self._is_refreshing:
@@ -442,22 +443,46 @@ class PlexServerCache:
                 # A cold cache diffs against nothing, so every episode would land in
                 # `added` and be retained for a result the caller throws away.
                 collect_changes = bool(self.episode_parts)
+                # Only worth recording media paths when a pattern is configured;
+                # the shipped default ([""]) disables the check entirely.
+                collect_files = bool([p for p in self._plex.config.get("ignore_filepatterns") if p])
 
                 # Iterate lazily: holding the whole library at once costs >1GB on
                 # large libraries, which is enough to get the process OOM-killed
                 # before the refresh completes.
                 for episode in self._plex.iter_episodes():
                     part_list = new_episode_parts.setdefault(episode.key, [])
+                    files = []
                     for part in episode.iterParts():
                         part_list.append(part.key)
+                        if collect_files and getattr(part, "file", None):
+                            files.append(part.file)
 
                     if not collect_changes:
                         continue
 
                     if episode.key in self.episode_parts and set(self.episode_parts[episode.key]) != set(part_list):
-                        updated.append(episode)
+                        target = updated
                     elif episode.key not in self.episode_parts:
-                        added.append(episode)
+                        target = added
+                    else:
+                        continue
+
+                    # Record only what the consumers read. Retaining the Episode
+                    # costs ~12KB each, which is enough to OOM the process when a
+                    # bulk change marks the whole library as updated.
+                    target.append(EpisodeRef(
+                        key=episode.key,
+                        added_at=getattr(episode, "addedAt", None),
+                        library_section_title=getattr(episode, "librarySectionTitle", None),
+                        # parentIndex, not seasonNumber - see EpisodeRef.from_episode.
+                        # seasonNumber can fetch over the network from inside this loop.
+                        season_number=getattr(episode, "parentIndex", None),
+                        episode_number=getattr(episode, "episodeNumber", None),
+                        show_title=getattr(episode, "grandparentTitle", None),
+                        show_key=getattr(episode, "grandparentRatingKey", None),
+                        part_files=tuple(files),
+                    ))
 
                 self.episode_parts = new_episode_parts
                 logger.debug("[Cache] Done refreshing library cache")
