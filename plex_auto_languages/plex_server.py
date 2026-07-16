@@ -28,6 +28,13 @@ from plex_auto_languages.exceptions import UserNotFound
 
 logger = get_logger()
 
+# Shared pool for the per-episode fan-out to all users inside
+# process_new_or_updated_episode. Reused across episodes instead of creating and
+# tearing down a ThreadPoolExecutor on every single episode (which, under the
+# parallelized alert consumer, would otherwise churn thread creation constantly).
+_USER_FANOUT_POOL = concurrent.futures.ThreadPoolExecutor(
+    max_workers=5, thread_name_prefix="user-fanout")
+
 
 class SelectiveVerifySession(requests.Session):
     whitelist = set()
@@ -647,13 +654,12 @@ class PlexServer(UnprivilegedPlexServer):
                 logger.error(f"Error processing user {user_id}: {e}")
                 return None
 
-        with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
-            futures = {executor.submit(process_user, user_id): user_id for user_id in self.get_all_user_ids()}
-            for future in concurrent.futures.as_completed(futures):
-                result = future.result()
-                if result is not None:
-                    username, reference, user_item = result
-                    track_changes.change_track_for_user(username, reference, user_item)
+        futures = {_USER_FANOUT_POOL.submit(process_user, user_id): user_id for user_id in self.get_all_user_ids()}
+        for future in concurrent.futures.as_completed(futures):
+            result = future.result()
+            if result is not None:
+                username, reference, user_item = result
+                track_changes.change_track_for_user(username, reference, user_item)
 
         # Notify changes
         if track_changes.has_changes:

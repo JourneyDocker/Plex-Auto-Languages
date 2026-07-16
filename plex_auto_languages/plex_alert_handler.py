@@ -4,6 +4,7 @@ from time import sleep, monotonic
 import http.client
 from queue import Queue, Empty, Full
 from threading import Thread, Event
+import concurrent.futures
 from requests.exceptions import ReadTimeout, ConnectionError, HTTPError, RequestException
 from urllib3.exceptions import ReadTimeoutError, ProtocolError
 from plex_auto_languages.alerts import PlexActivity, PlexTimeline, PlexPlaying, PlexStatus
@@ -22,6 +23,15 @@ logger = get_logger()
 # guards against reprocessing anyway).
 DEDUPE_WINDOW_SECONDS = 5.0
 
+# Number of worker threads draining the alert queue. The producer (plexapi
+# AlertListener callback) enqueues alerts on its own thread; a single consumer
+# serializes behind each alert's network I/O (fetch_item -> reload -> fan-out to
+# all users), which is what lets the bounded queue fill on a large/busy library.
+# A small pool drains concurrently so the queue stays near zero. Kept modest:
+# each worker does real Plex I/O, so this is I/O-bound, not CPU-bound, and the
+# per-episode user fan-out already parallelizes within process().
+CONSUMER_WORKERS = 4
+
 
 class PlexAlertHandler():
     """
@@ -38,7 +48,7 @@ class PlexAlertHandler():
         _trigger_on_activity (bool): Whether to process activity events.
         _alerts_queue (Queue): Queue for storing alerts to be processed.
         _stop_event (Event): Threading event to signal thread termination.
-        _processor_thread (Thread): Background thread for processing alerts.
+        _processor_threads (list[Thread]): Worker threads draining the queue.
     """
 
     def __init__(self, plex: PlexServer, trigger_on_play: bool, trigger_on_scan: bool, trigger_on_activity: bool):
@@ -68,9 +78,15 @@ class PlexAlertHandler():
         self._deduped_alerts = 0
         self._dedupe_window = DEDUPE_WINDOW_SECONDS
         self._stop_event = Event()
-        self._processor_thread = Thread(target=self._process_alerts)
-        self._processor_thread.daemon = True
-        self._processor_thread.start()
+        # Pool of consumer threads. Each pulls from the shared queue; the queue's
+        # internal lock serializes get()/task_done() so no extra coordination needed.
+        self._processor_threads = [
+            Thread(target=self._process_alerts, name=f"alert-consumer-{worker_index}")
+            for worker_index in range(CONSUMER_WORKERS)
+        ]
+        for consumer_thread in self._processor_threads:
+            consumer_thread.daemon = True
+            consumer_thread.start()
         # Log queue health (depth + total drops) every 5 minutes so the bound is
         # observable from the container logs without a heap inspection.
         self._stats_thread = Thread(target=self._log_queue_stats)
@@ -81,7 +97,7 @@ class PlexAlertHandler():
         """
         Periodic queue-health log (every 5 min). Under the pre-filter the depth
         should stay near zero; a rising depth or any dropped alerts means the
-        single consumer cannot keep up with Plex's alert rate. Read-only on
+        consumer pool cannot keep up with Plex's alert rate. Read-only on
         shared state; exits promptly when stopped.
         """
         while not self._stop_event.wait(300):
@@ -116,12 +132,13 @@ class PlexAlertHandler():
 
     def stop(self) -> None:
         """
-        Stop the alert processing thread gracefully.
+        Stop the alert processing threads gracefully.
 
-        Sets the stop event and waits for the processor thread to terminate.
+        Sets the stop event and waits for the processor threads to terminate.
         """
         self._stop_event.set()
-        self._processor_thread.join()
+        for consumer_thread in self._processor_threads:
+            consumer_thread.join()
 
     def __call__(self, message: dict) -> None:
         """
@@ -181,11 +198,13 @@ class PlexAlertHandler():
 
     def _process_alerts(self) -> None:
         """
-        Background thread method that processes queued alerts.
+        Consumer thread method that processes queued alerts.
 
-        Continuously monitors the alert queue and processes each alert.
-        Handles timeouts with retries and logs exceptions.
-        This method runs until the stop event is set.
+        Runs in one of several worker threads (see CONSUMER_WORKERS). Each worker
+        pulls alerts from the shared queue and processes them. The retry counter is
+        thread-local so a slow/retrying alert in one worker cannot bleed its state
+        into another worker. Handles timeouts with retries and logs exceptions.
+        Runs until the stop event is set.
         """
         logger.debug("Starting alert processing thread")
         retry_counter = 0
