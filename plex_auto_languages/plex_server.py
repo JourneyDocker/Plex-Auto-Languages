@@ -608,6 +608,73 @@ class PlexServer(UnprivilegedPlexServer):
         """
         return section_title in self.config.get("ignore_libraries")
 
+    @staticmethod
+    def format_ref_name(show_title: str | None, season_number: int | None,
+                        episode_number: int | None) -> str:
+        """Format a log name from an EpisodeRef's primitives.
+
+        Separate from get_episode_short_name on purpose. That one reads
+        show().title via a live fetch; this reads grandparentTitle off the ref.
+        They disagree on real data - a show with an empty title reports
+        grandparentTitle = None while show().title == "" - so they are different
+        functions rather than one shared formatter pretending otherwise.
+        """
+        season_num = season_number if season_number is not None else 0
+        episode_num = episode_number if episode_number is not None else 0
+        if show_title is None:
+            return f"Unknown Show (S{season_num:02}E{episode_num:02})"
+        return f"'{show_title}' (S{season_num:02}E{episode_num:02})"
+
+    def _matches_ignore_filepattern(self, files) -> bool:
+        """Whether any of these recorded file paths matches an ignore pattern.
+
+        The ref-path counterpart of should_ignore_filepath, which keeps its own
+        copy of this loop so its early return stays ahead of episode.media.
+        """
+        patterns = self.config.get("ignore_filepatterns")
+        patterns = [p for p in patterns if p]
+        if not patterns:
+            return False
+        for filepath in files:
+            if not filepath:
+                continue
+            filepath_lower = filepath.lower()
+            for pattern in patterns:
+                try:
+                    if re.search(pattern, filepath_lower, re.IGNORECASE):
+                        return True
+                except re.error as e:
+                    logger.warning(f"Invalid regex pattern '{pattern}': {e}")
+        return False
+
+    def should_ignore_show_by_key(self, show_key, memo: dict | None = None) -> bool:
+        """Label-based ignore check for a show identified by its rating key.
+
+        Callers holding an EpisodeRef have the key but not the Show.
+
+        `memo` is a caller-owned dict that must not outlive the loop using it.
+        Roughly 2,000 shows back 65,906 episodes, so memoising turns one fetch
+        per episode into one per show. It is scoped to a single loop precisely
+        so it cannot serve stale labels across runs.
+
+        A show that cannot be fetched is not ignored: plexapi raises NotFound
+        rather than returning None, and today an escaping NotFound aborts the
+        entire deep-analysis loop.
+        """
+        if show_key is None:
+            return False
+        if memo is not None and show_key in memo:
+            return memo[show_key]
+        try:
+            show = self._plex.fetchItem(show_key)
+            ignored = show is not None and self.should_ignore_show(show)
+        except Exception as e:
+            logger.warning(f"Unable to fetch show {show_key}: {e}")
+            ignored = False
+        if memo is not None:
+            memo[show_key] = ignored
+        return ignored
+
     def should_ignore_show(self, show: Show) -> bool:
         """
         Check if a show should be ignored based on its labels or its library.
