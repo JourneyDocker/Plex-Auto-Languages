@@ -205,6 +205,15 @@ class UnprivilegedPlexServer():
                 )
                 if not page:
                     break
+                for episode in page:
+                    # A section search returns librarySectionTitle on the
+                    # MediaContainer, not on each Video, so every episode here has
+                    # it set to None. Reading it would send plexapi looking for a
+                    # value it does not have and reload the whole item over the
+                    # network (base.py:657), once per episode. Stamp it from the
+                    # section that produced them instead - the same propagation
+                    # plexapi does onto a show's children (video.py:1318).
+                    episode.librarySectionTitle = section.title
                 yield from page
                 # Advance by what was actually returned rather than by page_size:
                 # a short page mid-section would otherwise leave a permanent gap,
@@ -604,7 +613,11 @@ class PlexServer(UnprivilegedPlexServer):
         refs = []
         for section in self.get_show_sections():
             recent = section.searchEpisodes(sort="addedAt:desc", filters={"addedAt>>": f"{minutes}m"})
-            refs.extend(EpisodeRef.from_episode(episode) for episode in recent)
+            for episode in recent:
+                # Same reason as iter_episodes: unstamped, reading this field
+                # costs a full metadata reload per episode.
+                episode.librarySectionTitle = section.title
+                refs.append(EpisodeRef.from_episode(episode))
         return refs
 
     @staticmethod

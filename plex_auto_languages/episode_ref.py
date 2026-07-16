@@ -10,9 +10,15 @@ class EpisodeRef:
 
     refresh_library_cache() used to hand back live plexapi Episode objects at
     roughly 12KB each, so a bulk part-key churn retained the whole library
-    (~790MB on a 65,906-episode server) and got the process OOM-killed. These
-    measure ~356 bytes. Every field is already loaded on the Episode during the
-    refresh, so building one costs no extra requests.
+    (~790MB on a 65,925-episode server) and got the process OOM-killed. These
+    measure ~242 bytes.
+
+    Building one issues no requests, but only for an Episode whose fields are
+    populated. Reading a field that is None on a partial object makes plexapi
+    reload the whole item over the network (base.py:657), and librarySectionTitle
+    is None on every episode a section search returns. iter_episodes stamps it
+    from the owning section for exactly this reason; without that, building refs
+    for a full library costs one metadata request per episode.
 
     Note show_title comes from grandparentTitle, which is NOT always the same as
     show().title: a show with an empty title reports grandparentTitle = None.
