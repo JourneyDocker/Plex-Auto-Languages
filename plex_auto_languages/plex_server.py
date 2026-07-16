@@ -227,22 +227,6 @@ class UnprivilegedPlexServer():
         """
         return list(self.iter_episodes())
 
-    def get_recently_added_episodes(self, minutes: int) -> List[Episode]:
-        """
-        Get episodes that were recently added to non-ignored Plex libraries.
-
-        Args:
-            minutes (int): Number of minutes to look back for recently added episodes.
-
-        Returns:
-            List[Episode]: A list of episodes added within the specified time frame.
-        """
-        episodes = []
-        for section in self.get_show_sections():
-            recent = section.searchEpisodes(sort="addedAt:desc", filters={"addedAt>>": f"{minutes}m"})
-            episodes.extend(recent)
-        return episodes
-
     def get_show_sections(self) -> List[ShowSection]:
         """
         Get all TV show sections from the Plex library that are not ignored.
@@ -617,8 +601,11 @@ class PlexServer(UnprivilegedPlexServer):
         refresh_library_cache(). Its only consumer (the library-scan handler)
         does not check filepaths, so part files are not collected.
         """
-        return [EpisodeRef.from_episode(episode)
-                for episode in self.get_recently_added_episodes(minutes)]
+        refs = []
+        for section in self.get_show_sections():
+            recent = section.searchEpisodes(sort="addedAt:desc", filters={"addedAt>>": f"{minutes}m"})
+            refs.extend(EpisodeRef.from_episode(episode) for episode in recent)
+        return refs
 
     @staticmethod
     def format_ref_name(show_title: str | None, season_number: int | None,
@@ -860,28 +847,32 @@ class PlexServer(UnprivilegedPlexServer):
 
         # Scan library
         added, updated = self.cache.refresh_library_cache()
-        for item in added:
-            if self.should_ignore_library(item.librarySectionTitle):
+        # Scoped to this loop so it cannot serve stale labels on a later run.
+        show_memo: dict = {}
+        for ref in added:
+            if self.should_ignore_library(ref.library_section_title):
                 continue
-            if self.should_ignore_show(item.show()):
+            if self.should_ignore_show_by_key(ref.show_key, show_memo):
                 continue
-            if self.should_ignore_filepath(item):
+            if self._matches_ignore_filepattern(ref.part_files):
                 continue
-            if not self.cache.should_process_recently_added(item.key, item.addedAt):
+            if not self.cache.should_process_recently_added(ref.key, ref.added_at):
                 continue
-            logger.info(f"[Scheduler] Processing newly added episode {self.get_episode_short_name(item)}")
-            self.process_new_or_updated_episode(item.key, EventType.SCHEDULER, True)
-        for item in updated:
-            if self.should_ignore_library(item.librarySectionTitle):
+            name = self.format_ref_name(ref.show_title, ref.season_number, ref.episode_number)
+            logger.info(f"[Scheduler] Processing newly added episode {name}")
+            self.process_new_or_updated_episode(ref.key, EventType.SCHEDULER, True)
+        for ref in updated:
+            if self.should_ignore_library(ref.library_section_title):
                 continue
-            if self.should_ignore_show(item.show()):
+            if self.should_ignore_show_by_key(ref.show_key, show_memo):
                 continue
-            if self.should_ignore_filepath(item):
+            if self._matches_ignore_filepattern(ref.part_files):
                 continue
-            if not self.cache.should_process_recently_updated(item.key):
+            if not self.cache.should_process_recently_updated(ref.key):
                 continue
-            logger.info(f"[Scheduler] Processing updated episode {self.get_episode_short_name(item)}")
-            self.process_new_or_updated_episode(item.key, EventType.SCHEDULER, False)
+            name = self.format_ref_name(ref.show_title, ref.season_number, ref.episode_number)
+            logger.info(f"[Scheduler] Processing updated episode {name}")
+            self.process_new_or_updated_episode(ref.key, EventType.SCHEDULER, False)
         logger.info("[Scheduler] Deep analysis completed")
 
     def stop(self) -> None:
