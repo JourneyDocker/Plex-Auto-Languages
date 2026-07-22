@@ -171,15 +171,78 @@ class TrackChanges():
                      f"and user '{self._username}' based on episode: 'S{self._reference.seasonNumber:02}E{self._reference.episodeNumber:02}'")
         self._changes = []
         reference_has_subtitle_streams = len(self._reference.subtitleStreams()) > 0
+        reference_audio_stream_count = len(self._reference.audioStreams())
+
         for episode in episodes:
             episode.reload()
             for part in episode.iterParts():
                 current_audio_stream, current_subtitle_stream = self._get_selected_streams(part)
+                audio_streams = part.audioStreams()
+
                 # Audio stream
-                matching_audio_stream = self._match_audio_stream(part.audioStreams())
-                if current_audio_stream is not None and matching_audio_stream is not None and \
-                        matching_audio_stream.id != current_audio_stream.id:
-                    self._changes.append((episode, part, AudioStream.STREAMTYPE, matching_audio_stream))
+                matching_audio_stream = self._match_audio_stream(audio_streams)
+
+                current_audio_is_commentary = (
+                    current_audio_stream is not None and
+                    current_audio_stream.title is not None and
+                    "commentary" in current_audio_stream.title.lower()
+                )
+
+                # If the reference audio stream cannot be matched on this part, do not apply
+                # the reference subtitle directly. However, if the reference has no subtitle selected,
+                # try to fall back to a regular subtitle matching the reference audio language.
+                #
+                # Example:
+                # Reference: FR audio + no subtitles
+                # Target: JP audio only + FR subtitles
+                # Result: keep JP audio and select regular FR subtitles.
+                if self._audio_stream is not None and matching_audio_stream is None:
+                    if current_audio_is_commentary:
+                        logger.debug(f"[Language Update] Skipping subtitle changes for show '{episode.show().title}' "
+                                     f"episode 'S{episode.seasonNumber:02}E{episode.episodeNumber:02}' "
+                                     f"and user '{self.username}' because the current audio stream is commentary "
+                                     f"and no matching audio stream was found")
+                    elif self._subtitle_stream is None:
+                        fallback_subtitle_stream = self._match_regular_subtitle_stream_by_language(
+                            part.subtitleStreams(),
+                            self._audio_stream.languageCode
+                        )
+
+                        if fallback_subtitle_stream is not None and \
+                                (current_subtitle_stream is None or fallback_subtitle_stream.id != current_subtitle_stream.id):
+                            self._changes.append((episode, part, SubtitleStream.STREAMTYPE, fallback_subtitle_stream))
+                            logger.debug(f"[Language Update] Applying fallback subtitle for show '{episode.show().title}' "
+                                         f"episode 'S{episode.seasonNumber:02}E{episode.episodeNumber:02}' "
+                                         f"and user '{self.username}' because no matching audio stream was found")
+                        else:
+                            logger.debug(f"[Language Update] Skipping subtitle changes for show '{episode.show().title}' "
+                                         f"episode 'S{episode.seasonNumber:02}E{episode.episodeNumber:02}' "
+                                         f"and user '{self.username}' because no matching audio stream or fallback subtitle was found")
+                    else:
+                        logger.debug(f"[Language Update] Skipping subtitle changes for show '{episode.show().title}' "
+                                     f"episode 'S{episode.seasonNumber:02}E{episode.episodeNumber:02}' "
+                                     f"and user '{self.username}' because no matching audio stream was found")
+                    continue
+
+                reference_has_single_audio = self._audio_stream is not None and reference_audio_stream_count == 1
+                target_has_multiple_audio = len(audio_streams) > 1
+                weak_reference_audio = reference_has_single_audio and target_has_multiple_audio
+
+                if weak_reference_audio:
+                    # The reference has only one audio stream while the target has multiple audio streams.
+                    # Do not propagate the audio stream itself, because a single available audio stream can simply be Plex's fallback.
+                    # However, subtitle changes are still allowed if the target is already using the same audio language.
+                    if current_audio_stream is None or current_audio_stream.languageCode != self._audio_stream.languageCode:
+                        logger.debug(f"[Language Update] Skipping language changes for show '{episode.show().title}' "
+                                     f"episode 'S{episode.seasonNumber:02}E{episode.episodeNumber:02}' "
+                                     f"and user '{self.username}' because the reference has only one audio stream "
+                                     f"and the target is not currently using the same audio language")
+                        continue
+                else:
+                    if current_audio_stream is not None and matching_audio_stream is not None and \
+                            matching_audio_stream.id != current_audio_stream.id:
+                        self._changes.append((episode, part, AudioStream.STREAMTYPE, matching_audio_stream))
+
                 # Subtitle stream
                 matching_subtitle_stream = self._match_subtitle_stream(part.subtitleStreams())
 
@@ -187,10 +250,9 @@ class TrackChanges():
                 # If the reference episode has no subtitle streams at all, do not propagate "None" to other episodes.
                 # This avoids disabling subtitles on episodes that do have subtitle streams while the reference episode
                 # simply has burned-in subtitles or no subtitle track available.
-                
-                if current_subtitle_stream is not None and matching_subtitle_stream is None:
+                if matching_subtitle_stream is None:
                     if self._subtitle_stream is None:
-                        if reference_has_subtitle_streams:
+                        if current_subtitle_stream is not None and reference_has_subtitle_streams:
                             # Reference has subtitle streams and subtitles are explicitly off -> clear current subtitle.
                             self._changes.append((episode, part, SubtitleStream.STREAMTYPE, None))
                         else:
@@ -198,8 +260,34 @@ class TrackChanges():
                             pass
                     elif self.is_forced_subtitle(self._subtitle_stream):
                         # Reference uses forced subtitles, but this part has no matching forced subtitle.
-                        # Clear the current subtitle instead of keeping a regular subtitle from the same language.
-                        self._changes.append((episode, part, SubtitleStream.STREAMTYPE, None))
+                        # If audio and subtitle languages are different, fall back to a regular subtitle
+                        # in the same subtitle language. If they are the same language, disabling subtitles
+                        # is more natural than selecting a full regular subtitle.
+                        audio_language_code = self._audio_stream.languageCode if self._audio_stream is not None else None
+                        subtitle_language_code = self._subtitle_stream.languageCode
+
+                        should_try_regular_fallback = (
+                            audio_language_code is not None and
+                            subtitle_language_code is not None and
+                            audio_language_code != subtitle_language_code
+                        )
+
+                        if should_try_regular_fallback:
+                            fallback_subtitle_stream = self._match_regular_subtitle_stream_by_language(
+                                part.subtitleStreams(),
+                                subtitle_language_code
+                            )
+
+                            if fallback_subtitle_stream is not None:
+                                if current_subtitle_stream is None or fallback_subtitle_stream.id != current_subtitle_stream.id:
+                                    self._changes.append((episode, part, SubtitleStream.STREAMTYPE, fallback_subtitle_stream))
+                                    logger.debug(f"[Language Update] Applying regular subtitle fallback for show '{episode.show().title}' "
+                                                 f"episode 'S{episode.seasonNumber:02}E{episode.episodeNumber:02}' "
+                                                 f"and user '{self.username}' because no matching forced subtitle was found")
+                            elif current_subtitle_stream is not None:
+                                self._changes.append((episode, part, SubtitleStream.STREAMTYPE, None))
+                        elif current_subtitle_stream is not None:
+                            self._changes.append((episode, part, SubtitleStream.STREAMTYPE, None))
                     else:
                         # Reference had a regular subtitle but no matching subtitle was found for this part.
                         # Keep the current subtitle to avoid disabling subtitles unexpectedly.
@@ -207,16 +295,60 @@ class TrackChanges():
 
                 if matching_subtitle_stream is not None and \
                         (current_subtitle_stream is None or matching_subtitle_stream.id != current_subtitle_stream.id):
-                    if current_audio_stream is not None and current_audio_stream.title is not None and \
-                            "commentary" in current_audio_stream.title.lower() and matching_audio_stream is None:
-                        # if the changed stream was commentary but this ep has none, then don't touch subs
-                        logger.debug(f"[Language Update] Skipping subtitle changes for show '{episode.show().title}' "
-                                     f"episode 'S{episode.seasonNumber:02}E{episode.episodeNumber:02}' "
-                                     f"and user '{self.username}'")
-                    else:
-                        self._changes.append((episode, part, SubtitleStream.STREAMTYPE, matching_subtitle_stream))
+                    self._changes.append((episode, part, SubtitleStream.STREAMTYPE, matching_subtitle_stream))
+
         self._update_description(episodes)
         self._computed = True
+
+    def _match_regular_subtitle_stream_by_language(
+            self,
+            subtitle_streams: List[SubtitleStream],
+            language_code: str
+    ) -> Optional[SubtitleStream]:
+        """
+        Find a regular non-forced subtitle stream matching the given language code.
+
+        This is used as a fallback when the reference audio language cannot be applied
+        to the target episode and the reference has no subtitle selected.
+        """
+        if language_code is None:
+            return None
+
+        streams = [
+            s for s in subtitle_streams
+            if s.languageCode == language_code and not self.is_forced_subtitle(s)
+        ]
+
+        if len(streams) == 0:
+            return None
+
+        non_hearing_impaired_streams = [
+            s for s in streams
+            if not getattr(s, "hearingImpaired", False)
+        ]
+        if len(non_hearing_impaired_streams) > 0:
+            streams = non_hearing_impaired_streams
+
+        if len(streams) == 1:
+            return streams[0]
+
+        scores = [0] * len(streams)
+        for index, stream in enumerate(streams):
+            if stream.codec is not None:
+                scores[index] += 1
+            if stream.extendedDisplayTitle is not None:
+                scores[index] += 1
+            if stream.displayTitle is not None:
+                scores[index] += 1
+            if stream.title is not None:
+                scores[index] += 1
+
+        score_str = ", ".join(
+            f"{(stream.extendedDisplayTitle or stream.title or 'Unknown')}={score}"
+            for stream, score in zip(streams, scores)
+        )
+        logger.debug(f"[Language Update] Fallback subtitle scores: {score_str}")
+        return streams[scores.index(max(scores))]
 
     def apply(self) -> None:
         """
