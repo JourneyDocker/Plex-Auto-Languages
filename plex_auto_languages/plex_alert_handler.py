@@ -101,7 +101,7 @@ class PlexAlertHandler():
         shared state; exits promptly when stopped.
         """
         while not self._stop_event.wait(300):
-            logger.info(
+            logger.debug(
                 "Alert queue depth=%d/%d dropped_total=%d deduped_total=%d"
                 % (self._alerts_queue.qsize(), self._alerts_queue.maxsize,
                    self._dropped_alerts, self._deduped_alerts))
