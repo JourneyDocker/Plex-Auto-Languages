@@ -261,6 +261,10 @@ class TrackChanges():
         Returns:
             bool: True if the episode comes after the reference, False otherwise.
         """
+        if self._reference.seasonNumber is None or self._reference.episodeNumber is None:
+            return False
+        if episode.seasonNumber is None or episode.episodeNumber is None:
+            return False
         return self._reference.seasonNumber < episode.seasonNumber or \
             (self._reference.seasonNumber == episode.seasonNumber and self._reference.episodeNumber < episode.episodeNumber)
 
