@@ -278,6 +278,9 @@ class Configuration:
         if self.get("update_strategy") not in ["all", "next"]:
             logger.error("The 'update_strategy' parameter must be either 'all' or 'next'")
             raise InvalidConfiguration
+        if self.get("subtitle_none_behavior") not in ["forced", "disabled"]:
+            logger.error("The 'subtitle_none_behavior' parameter must be either 'forced' or 'disabled'")
+            raise InvalidConfiguration
         if not isinstance(self.get("ignore_labels"), list):
             logger.error("The 'ignore_labels' parameter must be a list or a string-based comma separated list")
             raise InvalidConfiguration

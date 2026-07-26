@@ -28,6 +28,10 @@ plexautolanguages:
   # Disabling this parameter will prevent PlexAutoLanguages from detecting updated files for an already existing episode
   # It is recommended to disable this parameter if you have a large TV Show library (10k+ episodes)
   refresh_library_on_scan: true
+  
+  # "forced"  => comportement actuel : si aucun sous-titre est choisi, chercher les sous-titres forced
+  # "disabled" => vrai aucun sous-titre : désactiver tous les sous-titres
+  subtitle_none_behavior: "forced"
 
   # PlexAutoLanguages will ignore shows with any of the following Plex labels
   ignore_labels:

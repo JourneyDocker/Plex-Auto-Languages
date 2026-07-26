@@ -179,17 +179,21 @@ plex:
 
 ```yaml
 plexautolanguages:
-  update_level: "show"          # Options: "show" (default), "season"
-  update_strategy: "next"       # Options: "all", "next" (default)
-  trigger_on_play: true         # Update language when playing an episode
-  trigger_on_scan: true         # Update language when new files are scanned
-  trigger_on_activity: false    # Update language when navigating Plex (experimental)
-  refresh_library_on_scan: true # Refresh cached library on Plex scans
-  ignore_labels:                # Ignore shows with these Plex labels
+  update_level: "show"              # Options: "show" (default), "season"
+  update_strategy: "next"           # Options: "all", "next" (default)
+  trigger_on_play: true             # Update language when playing an episode
+  trigger_on_scan: true             # Update language when new files are scanned
+  trigger_on_activity: false        # Update language when navigating Plex (experimental)
+  refresh_library_on_scan: true     # Refresh cached library on Plex scans
+  subtitle_none_behavior: "forced"  # Options: "forced" (default), "disabled"
+                                    # "forced": when no subtitle is selected, PAL will try to apply forced subtitles matching the audio language
+                                    # "disabled": when no subtitle is selected, PAL will disable subtitles completely
+
+  ignore_labels:                    # Ignore shows with these Plex labels
     - PAL_IGNORE
-  ignore_libraries:             # Ignore these libraries when updating sub/audio language
+  ignore_libraries:                 # Ignore these libraries when updating sub/audio language
     - ""
-  ignore_filepatterns:          # Ignore episodes whose media file path matches these regex patterns
+  ignore_filepatterns:              # Ignore episodes whose media file path matches these regex patterns
     - ""
 ```
 
@@ -216,26 +220,27 @@ debug: false   # Enable debug logs
 
 ### Environment Variable Summary
 
-| Environment Variable            | Default Value | Description                                                                                                                  |
-| ------------------------------- | ------------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| `PLEX_URL`                      | *(none)*      | URL to your Plex server. Replace `http://plex:32400` with your actual Plex server URL.                                       |
-| `PLEX_TOKEN`                    | *(none)*      | Plex authentication token.                                                                                                   |
-| `PLEX_CONNECTION_MAX_RETRIES`   | `300`         | Maximum number of connection attempts when connecting to the Plex server.                                                    |
-| `PLEX_CONNECTION_RETRY_DELAY`   | `5`           | Delay in seconds between connection retry attempts.                                                                          |
-| `UPDATE_LEVEL`                  | `show`        | Determines whether the update applies to the entire show or just the current season. Accepted values: `show`, `season`.      |
-| `UPDATE_STRATEGY`               | `next`        | Chooses whether to update all episodes or only the next one. Accepted values: `all`, `next`.                                 |
-| `TRIGGER_ON_PLAY`               | `true`        | If set to true, playing an episode triggers a language update.                                                               |
-| `TRIGGER_ON_SCAN`               | `true`        | If set to true, scanning for new files triggers a language update.                                                           |
-| `TRIGGER_ON_ACTIVITY`           | `false`       | If set to true, browsing the Plex library triggers a language update.                                                        |
-| `REFRESH_LIBRARY_ON_SCAN`       | `true`        | Refreshes the cached library when the Plex server scans its library.                                                         |
-| `IGNORE_LABELS`                 | `PAL_IGNORE`  | Comma-separated list of Plex labels. Shows with these labels will be ignored.                                                |
-| `IGNORE_LIBRARIES`              | *(none)*      | Comma-separated list of library names that PAL will ignore when updating subtitle/audio languages.                           |
-| `IGNORE_FILEPATTERNS`           | *(none)*      | Comma-separated list of regex patterns matched against media file paths. Episodes with matching files are ignored (e.g. `.*coming\.soon.*,.*trailer.*`). |
-| `SCHEDULER_ENABLE`              | `true`        | Enables or disables the scheduler feature.                                                                                   |
-| `SCHEDULER_SCHEDULE_TIME`       | `02:00`       | Time (in `HH:MM` format) when the scheduler starts its task.                                                                 |
-| `NOTIFICATIONS_ENABLE`          | `false`       | Enables or disables notifications.                                                                                           |
-| `NOTIFICATIONS_APPRISE_CONFIGS` | `[]`          | JSON array of Apprise notification configurations. See Apprise docs for more information: https://github.com/caronc/apprise. |
-| `DEBUG`                         | `false`       | Enables debug mode for verbose logging.                                                                                      |
+| Environment Variable            | Default Value | Description                                                                                                                                                                                                                          |
+| ------------------------------- | ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `PLEX_URL`                      | *(none)*      | URL to your Plex server. Replace `http://plex:32400` with your actual Plex server URL.                                                                                                                                               |
+| `PLEX_TOKEN`                    | *(none)*      | Plex authentication token.                                                                                                                                                                                                           |
+| `PLEX_CONNECTION_MAX_RETRIES`   | `300`         | Maximum number of connection attempts when connecting to the Plex server.                                                                                                                                                            |
+| `PLEX_CONNECTION_RETRY_DELAY`   | `5`           | Delay in seconds between connection retry attempts.                                                                                                                                                                                  |
+| `UPDATE_LEVEL`                  | `show`        | Determines whether the update applies to the entire show or just the current season. Accepted values: `show`, `season`.                                                                                                              |
+| `UPDATE_STRATEGY`               | `next`        | Chooses whether to update all episodes or only the next one. Accepted values: `all`, `next`.                                                                                                                                         |
+| `TRIGGER_ON_PLAY`               | `true`        | If set to true, playing an episode triggers a language update.                                                                                                                                                                       |
+| `TRIGGER_ON_SCAN`               | `true`        | If set to true, scanning for new files triggers a language update.                                                                                                                                                                   |
+| `TRIGGER_ON_ACTIVITY`           | `false`       | If set to true, browsing the Plex library triggers a language update.                                                                                                                                                                |
+| `REFRESH_LIBRARY_ON_SCAN`       | `true`        | Refreshes the cached library when the Plex server scans its library.                                                                                                                                                                 |
+| `SUBTITLE_NONE_BEHAVIOR`        | `forced`      | Controls what PAL does when no subtitle is selected on the reference episode. Accepted values: `forced`, `disabled`. `forced` tries to apply forced subtitles matching the audio language; `disabled` disables subtitles completely. |
+| `IGNORE_LABELS`                 | `PAL_IGNORE`  | Comma-separated list of Plex labels. Shows with these labels will be ignored.                                                                                                                                                        |
+| `IGNORE_LIBRARIES`              | *(none)*      | Comma-separated list of library names that PAL will ignore when updating subtitle/audio languages.                                                                                                                                   |
+| `IGNORE_FILEPATTERNS`           | *(none)*      | Comma-separated list of regex patterns matched against media file paths. Episodes with matching files are ignored (e.g. `.*coming\.soon.*,.*trailer.*`).                                                                             |
+| `SCHEDULER_ENABLE`              | `true`        | Enables or disables the scheduler feature.                                                                                                                                                                                           |
+| `SCHEDULER_SCHEDULE_TIME`       | `02:00`       | Time (in `HH:MM` format) when the scheduler starts its task.                                                                                                                                                                         |
+| `NOTIFICATIONS_ENABLE`          | `false`       | Enables or disables notifications.                                                                                                                                                                                                   |
+| `NOTIFICATIONS_APPRISE_CONFIGS` | `[]`          | JSON array of Apprise notification configurations. See Apprise docs for more information: https://github.com/caronc/apprise.                                                                                                         |
+| `DEBUG`                         | `false`       | Enables debug mode for verbose logging.                                                                                                                                                                                              |
 
 > [!NOTE]
 >
