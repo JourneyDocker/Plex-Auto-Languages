@@ -11,7 +11,7 @@ from plex_auto_languages.utils.configuration import Configuration
 from plex_auto_languages.utils.healthcheck import HealthcheckServer
 
 # Version information
-__version__ = "1.5.5-dev3"
+__version__ = "1.5.5-dev4"
 
 class PlexAutoLanguages:
     """
@@ -86,7 +86,9 @@ class PlexAutoLanguages:
         self.scheduler = None
         if self.config.get("scheduler.enable"):
             self.scheduler = Scheduler(
-                self.config.get("scheduler.schedule_time"), self.scheduler_callback
+                self.config.get("scheduler.schedule_time"),
+                self.scheduler_callback,
+                schedule_days=self.config.get("scheduler.schedule_days"),
             )
 
         # Placeholder for Plex server interactions.

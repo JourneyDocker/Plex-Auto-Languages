@@ -9,28 +9,37 @@ from plex_auto_languages.utils.logger import get_logger
 logger = get_logger()
 
 
+VALID_DAYS = {"monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"}
+
+
 class Scheduler(Thread):
     """
-    A threaded scheduler that executes a callback function at a specified time each day.
+    A threaded scheduler that executes a callback at a scheduled time,
+    optionally restricted to specific days of the week.
 
-    This class extends Thread to run the scheduler in the background, allowing
-    the application to perform other tasks while waiting for scheduled events.
-    The scheduler can be gracefully shut down when needed.
+    Extends Thread to run in the background. Can be gracefully shut down.
 
     Attributes:
         _stop_event (Event): Threading event used to signal the scheduler to stop.
     """
 
-    def __init__(self, time_of_day: str, callback: Callable):
+    def __init__(self, time_of_day: str, callback: Callable, schedule_days: list = None):
         """
-        Initialize the scheduler with a daily task.
+        Initialize the scheduler.
 
         Args:
-            time_of_day (str): The time of day to run the callback in 'HH:MM' format.
-            callback (Callable): The function to execute at the specified time.
+            time_of_day (str): Time to run the callback in 'HH:MM' format.
+            callback (Callable): Function to execute at the scheduled time.
+            schedule_days (list, optional): Days to run on (lowercase English).
+                When empty or None, runs every day.
         """
         super().__init__()
-        schedule.every().day.at(time_of_day).do(callback)
+        days = schedule_days or []
+        if days:
+            for day in days:
+                getattr(schedule.every(), day).at(time_of_day).do(callback)
+        else:
+            schedule.every().day.at(time_of_day).do(callback)
         self._stop_event = Event()
 
     def run(self) -> None:
