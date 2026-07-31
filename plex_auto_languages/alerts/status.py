@@ -1,5 +1,6 @@
 from __future__ import annotations
 from typing import TYPE_CHECKING
+from datetime import datetime, timedelta
 
 from plex_auto_languages.alerts.base import PlexAlert
 from plex_auto_languages.utils.logger import get_logger
@@ -10,6 +11,15 @@ if TYPE_CHECKING:
 
 
 logger = get_logger()
+
+# A full refresh_library_cache() iterates every episode in the library and takes
+# minutes on large libraries. Plex can emit scan-complete alerts every couple of
+# minutes (periodic scanning, an external tool, or its own re-scans), and running
+# the whole-library iteration for each one keeps the cache hot and hammers the
+# server non-stop. Within this window of the last refresh, fall back to the cheap
+# recently-added query - single-item updates are already covered by timeline
+# alerts, and the next full refresh reconciles anything the query misses.
+SCAN_REFRESH_COOLDOWN = timedelta(minutes=5)
 
 
 class PlexStatus(PlexAlert):
@@ -58,7 +68,12 @@ class PlexStatus(PlexAlert):
         logger.debug("[Status] The Plex server scanned the library")
 
         if plex.config.get("refresh_library_on_scan"):
-            added, updated = plex.cache.refresh_library_cache()
+            if datetime.now() - plex.cache.last_refresh > SCAN_REFRESH_COOLDOWN:
+                added, updated = plex.cache.refresh_library_cache()
+            else:
+                logger.debug("[Status] Library cache refreshed recently; using recently-added query")
+                added = plex.get_recently_added_episode_refs(minutes=5)
+                updated = []
         else:
             added = plex.get_recently_added_episode_refs(minutes=5)
             updated = []

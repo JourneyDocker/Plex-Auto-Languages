@@ -412,12 +412,25 @@ class PlexServerCache:
 
             return set(current_parts) != set(previous_parts)
 
+    @property
+    def last_refresh(self) -> datetime:
+        """When the full library cache was last refreshed (epoch if never)."""
+        return self._last_refresh
+
     def refresh_library_cache(self) -> tuple[list, list]:
         """
         Refreshes the cached library data by scanning all episodes in the Plex library.
 
         Updates the episode_parts dictionary with current data from the Plex server.
         Identifies episodes that have been added or updated since the last refresh.
+
+        The network-bound iteration deliberately runs OUTSIDE the cache lock: it
+        takes minutes on a large library, and holding the RLock across it froze
+        every consumer touching the cache (should_process_recently_*, 
+        did_episode_parts_change) for the whole run, which let the bounded alert
+        queue fill and drop alerts whenever scans arrived back-to-back. The diff
+        runs against a snapshot taken under the lock, so concurrent in-place
+        updates from did_episode_parts_change cannot skew it.
 
         On a cold cache there is nothing to diff against, so no changes are collected
         and both returned lists are empty. The only caller in that situation discards
@@ -435,61 +448,69 @@ class PlexServerCache:
                 return [], []
 
             self._is_refreshing = True
-            try:
-                logger.debug("[Cache] Refreshing library cache")
-                added = []
-                updated = []
-                new_episode_parts = {}
-                # A cold cache diffs against nothing, so every episode would land in
-                # `added` and be retained for a result the caller throws away.
-                collect_changes = bool(self.episode_parts)
-                # Only worth recording media paths when a pattern is configured;
-                # the shipped default ([""]) disables the check entirely.
-                collect_files = bool([p for p in self._plex.config.get("ignore_filepatterns") if p])
+            # Snapshot the parts cache for the diff below. The whole iteration
+            # runs lock-free, so the snapshot is what the added/updated
+            # decisions compare against - not the live dict, which a concurrent
+            # did_episode_parts_change() may mutate mid-refresh.
+            previous_parts = dict(self.episode_parts)
+            # A cold cache diffs against nothing, so every episode would land in
+            # `added` and be retained for a result the caller throws away.
+            collect_changes = bool(previous_parts)
+            # Only worth recording media paths when a pattern is configured;
+            # the shipped default ([""]) disables the check entirely.
+            collect_files = bool([p for p in self._plex.config.get("ignore_filepatterns") if p])
 
-                # Iterate lazily: holding the whole library at once costs >1GB on
-                # large libraries, which is enough to get the process OOM-killed
-                # before the refresh completes.
-                for episode in self._plex.iter_episodes():
-                    part_list = new_episode_parts.setdefault(episode.key, [])
-                    files = []
-                    for part in episode.iterParts():
-                        part_list.append(part.key)
-                        if collect_files and getattr(part, "file", None):
-                            files.append(part.file)
+        try:
+            logger.debug("[Cache] Refreshing library cache")
+            added = []
+            updated = []
+            new_episode_parts = {}
 
-                    if not collect_changes:
-                        continue
+            # Iterate lazily: holding the whole library at once costs >1GB on
+            # large libraries, which is enough to get the process OOM-killed
+            # before the refresh completes.
+            for episode in self._plex.iter_episodes():
+                part_list = new_episode_parts.setdefault(episode.key, [])
+                files = []
+                for part in episode.iterParts():
+                    part_list.append(part.key)
+                    if collect_files and getattr(part, "file", None):
+                        files.append(part.file)
 
-                    if episode.key in self.episode_parts and set(self.episode_parts[episode.key]) != set(part_list):
-                        target = updated
-                    elif episode.key not in self.episode_parts:
-                        target = added
-                    else:
-                        continue
+                if not collect_changes:
+                    continue
 
-                    # Record only what the consumers read. Retaining the Episode
-                    # costs ~12KB each, which is enough to OOM the process when a
-                    # bulk change marks the whole library as updated.
-                    target.append(EpisodeRef(
-                        key=episode.key,
-                        added_at=getattr(episode, "addedAt", None),
-                        library_section_title=getattr(episode, "librarySectionTitle", None),
-                        # parentIndex, not seasonNumber - see EpisodeRef.from_episode.
-                        # seasonNumber can fetch over the network from inside this loop.
-                        season_number=getattr(episode, "parentIndex", None),
-                        episode_number=getattr(episode, "episodeNumber", None),
-                        show_title=getattr(episode, "grandparentTitle", None),
-                        show_key=getattr(episode, "grandparentRatingKey", None),
-                        part_files=tuple(files),
-                    ))
+                if episode.key in previous_parts and set(previous_parts[episode.key]) != set(part_list):
+                    target = updated
+                elif episode.key not in previous_parts:
+                    target = added
+                else:
+                    continue
 
+                # Record only what the consumers read. Retaining the Episode
+                # costs ~12KB each, which is enough to OOM the process when a
+                # bulk change marks the whole library as updated.
+                target.append(EpisodeRef(
+                    key=episode.key,
+                    added_at=getattr(episode, "addedAt", None),
+                    library_section_title=getattr(episode, "librarySectionTitle", None),
+                    # parentIndex, not seasonNumber - see EpisodeRef.from_episode.
+                    # seasonNumber can fetch over the network from inside this loop.
+                    season_number=getattr(episode, "parentIndex", None),
+                    episode_number=getattr(episode, "episodeNumber", None),
+                    show_title=getattr(episode, "grandparentTitle", None),
+                    show_key=getattr(episode, "grandparentRatingKey", None),
+                    part_files=tuple(files),
+                ))
+
+            with self._lock:
                 self.episode_parts = new_episode_parts
-                logger.debug("[Cache] Done refreshing library cache")
                 self._last_refresh = datetime.now()
-                self.save(force=True)
-                return added, updated
-            finally:
+            logger.debug("[Cache] Done refreshing library cache")
+            self.save(force=True)
+            return added, updated
+        finally:
+            with self._lock:
                 self._is_refreshing = False
 
     def get_instance_users(self, check_validity=True) -> list | None:

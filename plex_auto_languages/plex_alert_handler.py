@@ -27,10 +27,11 @@ DEDUPE_WINDOW_SECONDS = 5.0
 # AlertListener callback) enqueues alerts on its own thread; a single consumer
 # serializes behind each alert's network I/O (fetch_item -> reload -> fan-out to
 # all users), which is what lets the bounded queue fill on a large/busy library.
-# A small pool drains concurrently so the queue stays near zero. Kept modest:
-# each worker does real Plex I/O, so this is I/O-bound, not CPU-bound, and the
-# per-episode user fan-out already parallelizes within process().
-CONSUMER_WORKERS = 4
+# A small pool drains concurrently so the queue stays near zero. Each worker is
+# I/O-bound (real Plex HTTP round-trips), so a few extra workers are cheap and
+# widen the margin under scan bursts, when thousands of near-identical timeline
+# alerts arrive faster than 4 workers can fetch-and-discard them.
+CONSUMER_WORKERS = 8
 
 
 class PlexAlertHandler():
