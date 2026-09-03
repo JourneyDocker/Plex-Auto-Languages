@@ -1,5 +1,7 @@
+import os
 import signal
 import argparse
+import time
 from time import sleep
 from websocket import WebSocketConnectionClosedException, WebSocketTimeoutException
 
@@ -11,7 +13,7 @@ from plex_auto_languages.utils.configuration import Configuration
 from plex_auto_languages.utils.healthcheck import HealthcheckServer
 
 # Version information
-__version__ = "1.6.0"
+__version__ = "1.6.1-dev"
 
 class PlexAutoLanguages:
     """
@@ -228,6 +230,9 @@ class PlexAutoLanguages:
         if self.scheduler:
             self.scheduler.start()
 
+        failed_reconnect_attempts = 0
+        unhealthy_since = None  # monotonic timestamp when health first became false
+
         while not self.stop_signal:
             self.must_stop = False
             self.initializing = True # Set initializing flag
@@ -243,11 +248,21 @@ class PlexAutoLanguages:
                 self.alive = True
                 logger.info("Application initialization completed successfully")
                 self.reconnect_delay = 1  # Reset backoff on successful connection
+                failed_reconnect_attempts = 0
+                unhealthy_since = None
             except Exception as e:
                 logger.error(f"Initialization failed: {str(e)}")
                 self.initializing = False
                 if self.stop_signal:
                     break
+                failed_reconnect_attempts += 1
+                if unhealthy_since is None:
+                    unhealthy_since = time.monotonic()
+                # Fail-fast watchdog: exit for Docker restart after prolonged unhealthiness
+                # 5 consecutive failures or 5 minutes unhealthy
+                if failed_reconnect_attempts >= 5 or (time.monotonic() - unhealthy_since) > 300:
+                    logger.error(f"Plex reconnection failed {failed_reconnect_attempts} times / unhealthy for {time.monotonic() - unhealthy_since:.0f}s - exiting for Docker restart")
+                    os._exit(1)
                 logger.info(f"Retrying in {self.reconnect_delay}s...")
                 sleep(self.reconnect_delay)
                 self.reconnect_delay = min(self.reconnect_delay * 2, 300)  # Exponential backoff, max 5 minutes
@@ -267,9 +282,18 @@ class PlexAutoLanguages:
 
             # Clean up when stopping
             self.alive = False
+            if unhealthy_since is None:
+                unhealthy_since = time.monotonic()
             self.plex.save_cache()
             self.plex.stop()
             if not self.stop_signal:
+                failed_reconnect_attempts += 1
+                elapsed_unhealthy = time.monotonic() - unhealthy_since
+                # Fail-fast watchdog: exit for Docker restart after prolonged unhealthiness
+                # 5 consecutive failures or 5 minutes unhealthy
+                if failed_reconnect_attempts >= 5 or elapsed_unhealthy > 300:
+                    logger.error(f"Plex reconnection failed {failed_reconnect_attempts} times / unhealthy for {elapsed_unhealthy:.0f}s - exiting for Docker restart")
+                    os._exit(1)
                 sleep(self.reconnect_delay)
                 logger.info(f"Attempting to reestablish connection to the Plex server (delay: {self.reconnect_delay}s)...")
                 self.reconnect_delay = min(self.reconnect_delay * 2, 300)  # Exponential backoff, max 5 minutes

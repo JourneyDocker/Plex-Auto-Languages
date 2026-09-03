@@ -135,11 +135,26 @@ class PlexAlertHandler():
         """
         Stop the alert processing threads gracefully.
 
-        Sets the stop event and waits for the processor threads to terminate.
+        Sets the stop event, drains the queue to unblock consumers stuck in
+        fan-out I/O, then joins with a timeout so the outer reconnect loop
+        cannot stall indefinitely.
         """
         self._stop_event.set()
+        # Drain queue so workers blocked in process() can finish current item
+        # and then exit via stop_event check instead of pulling more work.
+        try:
+            while True:
+                self._alerts_queue.get_nowait()
+                try:
+                    self._alerts_queue.task_done()
+                except ValueError:
+                    pass
+        except Empty:
+            pass
         for consumer_thread in self._processor_threads:
-            consumer_thread.join()
+            consumer_thread.join(timeout=5)
+        # Timeout per thread (max ~40s total); threads are daemon so they won't block exit.
+        # Old threads exit via stop_event; new PlexServer creates fresh handler.
 
     def __call__(self, message: dict) -> None:
         """
