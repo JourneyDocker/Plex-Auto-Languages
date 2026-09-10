@@ -22,6 +22,10 @@ class TrackChanges():
         _event_type (EventType): The type of event that triggered these changes.
         _audio_stream (AudioStream): The selected audio stream from the reference episode.
         _subtitle_stream (SubtitleStream): The selected subtitle stream from the reference episode.
+        _audio_index (Optional[int]): Position of the selected audio stream within the reference
+            episode's filtered audio candidate list; tie-breaker for duplicate track names.
+        _subtitle_index (Optional[int]): Position of the selected subtitle stream within the
+            reference episode's filtered subtitle candidate list; tie-breaker for duplicates.
         _changes (List[Tuple]): List of changes to be applied, each containing episode, part, stream type, and new stream.
         _description (str): Human-readable description of the changes.
         _title (str): Title for the change notification.
@@ -41,6 +45,15 @@ class TrackChanges():
         self._username = username
         self._event_type = event_type
         self._audio_stream, self._subtitle_stream = self._get_selected_streams(reference)
+        # Positions of the selected streams within their filtered candidate lists, used only to
+        # break score ties between duplicate track names (see _select_best).
+        self._audio_index = self._reference_index(
+            self._audio_stream,
+            self._filter_audio_streams(reference.audioStreams(), self._audio_stream))
+        self._subtitle_index = self._reference_index(
+            self._subtitle_stream,
+            self._filter_subtitle_streams(reference.subtitleStreams(),
+                                          self._subtitle_stream, self._audio_stream))
         self._changes = []
         self._description = ""
         self._title = ""
@@ -249,6 +262,8 @@ class TrackChanges():
         self._reference = None
         self._audio_stream = None
         self._subtitle_stream = None
+        self._audio_index = None
+        self._subtitle_index = None
         self._changes = None
 
     def _is_episode_after(self, episode: Episode) -> bool:
@@ -321,7 +336,10 @@ class TrackChanges():
         Find the best matching audio stream from a list of available streams.
 
         Matches based on language code, descriptive terms, visual impaired flag, codec,
-        channel layout, and title similarity to the reference audio stream.
+        channel layout, and title similarity to the reference audio stream. When several
+        candidates tie at the top score (for example duplicate track names), the candidate
+        at the same position within the filtered list as the reference's selected stream
+        is preferred.
 
         Args:
             audio_streams (List[AudioStream]): The list of available audio streams.
@@ -333,59 +351,11 @@ class TrackChanges():
         if self._audio_stream is None:
             return None
 
-        # We only want streams with the same language code
-        streams = [s for s in audio_streams if s.languageCode == self._audio_stream.languageCode]
         # Check if streams aren't differentiated
         ambiguous = all(s.title == audio_streams[0].title for s in audio_streams)
 
-        def get_stream_title(stream):
-            """Helper function to get the most specific title available"""
-            return (stream.extendedDisplayTitle or
-                    stream.displayTitle or
-                    stream.title or "").lower()
-
-        def contains_descriptive_terms(title):
-            """Check if the title contains terms indicating a descriptive track"""
-            descriptive_terms = [
-                "commentary", "description", "descriptive",
-                "narration", "narrative", "described"
-            ]
-            return any(term in title for term in descriptive_terms)
-
-        # Get reference stream title
-        ref_title = get_stream_title(self._audio_stream)
-
-        # First, try to match visualImpaired flag if available
-        try:
-            # Check if the reference is a visual impaired track
-            if hasattr(self._audio_stream, 'visualImpaired') and self._audio_stream.visualImpaired:
-                # Keep only visual impaired tracks
-                visual_impaired_streams = [s for s in streams if hasattr(s, 'visualImpaired') and s.visualImpaired]
-                if visual_impaired_streams:
-                    streams = visual_impaired_streams
-            else:
-                # Filter out visual impaired tracks if reference is not visual impaired
-                non_visual_impaired_streams = [s for s in streams if not (hasattr(s, 'visualImpaired') and s.visualImpaired)]
-                if non_visual_impaired_streams:
-                    streams = non_visual_impaired_streams
-        except (AttributeError, TypeError):
-            # Fall back to descriptive terms if visualImpaired attribute is not available
-            #logger.debug("visualImpaired attribute not available, falling back to title-based detection")
-            pass
-
-        # Fallback to descriptive terms in title
-        if contains_descriptive_terms(ref_title):
-            # Keep only descriptive tracks if reference is descriptive
-            descriptive_streams = [s for s in streams if contains_descriptive_terms(get_stream_title(s))]
-            if descriptive_streams:
-                streams = descriptive_streams
-        else:
-            # Filter out descriptive tracks if reference is not descriptive
-            non_descriptive_streams = [s for s in streams if not contains_descriptive_terms(get_stream_title(s))]
-            if non_descriptive_streams:
-                streams = non_descriptive_streams
-
-        if len(streams) == 0:
+        streams = self._filter_audio_streams(audio_streams, self._audio_stream)
+        if streams is None or len(streams) == 0:
             return None
 
         if len(streams) == 1:
@@ -421,12 +391,27 @@ class TrackChanges():
                     self._audio_stream.title == stream.title:
                 scores[index] += 5
 
-        # Logging for debugging
-        score_str = ", ".join(f"{(stream.extendedDisplayTitle or stream.title or 'Unknown')}={score}" for stream, score in zip(streams, scores))
+        # Logging for debugging; the position within the filtered list disambiguates duplicate names
+        score_str = ", ".join(
+            f"{(stream.extendedDisplayTitle or stream.title or 'Unknown')}@{position}={score}"
+            for position, (stream, score) in enumerate(zip(streams, scores)))
         logger.debug(f"[Language Update] Audio scores: {score_str}")
-        return streams[scores.index(max(scores))]
+        return self._select_best(streams, scores, self._audio_index)
 
-    def is_forced_subtitle(self, stream: SubtitleStream) -> bool:
+    @staticmethod
+    def is_forced_subtitle(stream: SubtitleStream) -> bool:
+        """
+        Check whether a subtitle stream is a forced (dialog) track.
+
+        A track is considered forced when Plex marks it as forced, or when one of its
+        title fields mentions "forced".
+
+        Args:
+            stream (SubtitleStream): The subtitle stream to check.
+
+        Returns:
+            bool: True when the stream is forced.
+        """
         title = getattr(stream, "title", None)
         display_title = getattr(stream, "displayTitle", None)
         extended_display_title = getattr(stream, "extendedDisplayTitle", None)
@@ -450,7 +435,10 @@ class TrackChanges():
         Find the best matching subtitle stream from a list of available streams.
 
         Matches based on language code, forced flag, hearing impaired flag,
-        codec, and title similarity to the reference subtitle stream.
+        codec, and title similarity to the reference subtitle stream. When several
+        candidates tie at the top score (for example duplicate track names), the candidate
+        at the same position within the filtered list as the reference's selected stream
+        is preferred.
 
         Args:
             subtitle_streams (List[SubtitleStream]): The list of available subtitle streams.
@@ -458,26 +446,12 @@ class TrackChanges():
         Returns:
             Optional[SubtitleStream]: The best matching subtitle stream, or None if no match found.
         """
-        # If no subtitle is selected, the reference stream can be 'None'
-        if self._subtitle_stream is None:
-            if self._audio_stream is None:
-                return None
-            match_forced_only = True
-            match_hearing_impaired_only = False
-            language_code = self._audio_stream.languageCode
-        else:
-            match_forced_only = self.is_forced_subtitle(self._subtitle_stream)
-            match_hearing_impaired_only = self._subtitle_stream.hearingImpaired
-            language_code = self._subtitle_stream.languageCode
-
-        # We only want streams with the same language code
-        streams = [s for s in subtitle_streams if s.languageCode == language_code]
-        if match_forced_only:
-            streams = [s for s in streams if self.is_forced_subtitle(s)]
-        if match_hearing_impaired_only:
-            streams = [s for s in streams if s.hearingImpaired]
-
-        if len(streams) == 0:
+        # If there is neither a reference subtitle nor a reference audio stream, there is
+        # nothing to match against. Otherwise filter to the reference language, keeping only
+        # forced subtitles when the reference has subtitles off, and only hearing impaired
+        # subtitles when the reference uses them.
+        streams = self._filter_subtitle_streams(subtitle_streams, self._subtitle_stream, self._audio_stream)
+        if streams is None or len(streams) == 0:
             return None
 
         if len(streams) == 1:
@@ -506,10 +480,192 @@ class TrackChanges():
                         self._subtitle_stream.title == stream.title:
                     scores[index] += 5
 
-        # Logging for debugging
-        score_str = ", ".join(f"{(stream.extendedDisplayTitle or stream.title or 'Unknown')}={score}" for stream, score in zip(streams, scores))
+        # Logging for debugging; the position within the filtered list disambiguates duplicate names
+        score_str = ", ".join(
+            f"{(stream.extendedDisplayTitle or stream.title or 'Unknown')}@{position}={score}"
+            for position, (stream, score) in enumerate(zip(streams, scores)))
         logger.debug(f"[Language Update] Subtitle scores: {score_str}")
-        return streams[scores.index(max(scores))]
+        return self._select_best(streams, scores, self._subtitle_index)
+
+    @staticmethod
+    def _get_stream_title(stream) -> str:
+        """
+        Get the most specific title available for a stream, lower-cased.
+
+        Args:
+            stream: An audio or subtitle stream.
+
+        Returns:
+            str: The lower-cased extended display title, display title, or title (empty string
+                when all are missing).
+        """
+        return (stream.extendedDisplayTitle or
+                stream.displayTitle or
+                stream.title or "").lower()
+
+    @staticmethod
+    def _contains_descriptive_terms(title: str) -> bool:
+        """
+        Check if a stream title contains terms indicating a descriptive track.
+
+        Args:
+            title (str): The lower-cased stream title.
+
+        Returns:
+            bool: True when the title contains a descriptive-track term.
+        """
+        descriptive_terms = [
+            "commentary", "description", "descriptive",
+            "narration", "narrative", "described"
+        ]
+        return any(term in title for term in descriptive_terms)
+
+    @classmethod
+    def _filter_audio_streams(cls, audio_streams: List[AudioStream],
+                              reference_audio: Optional[AudioStream]) -> Optional[List[AudioStream]]:
+        """
+        Filter candidate audio streams for the reference audio stream.
+
+        Keeps streams with the same language code as the reference, then narrows to
+        visual-impaired (or non-visual-impaired) and descriptive (or non-descriptive) tracks,
+        mirroring the reference track. Logic is unchanged from the pre-refactor matcher.
+
+        Args:
+            audio_streams (List[AudioStream]): All available audio streams (raw, unfiltered).
+            reference_audio (Optional[AudioStream]): The reference audio stream.
+
+        Returns:
+            Optional[List[AudioStream]]: The filtered candidate list, or None when there is no
+                reference audio stream to match against.
+        """
+        if reference_audio is None:
+            return None
+
+        # We only want streams with the same language code
+        streams = [s for s in audio_streams if s.languageCode == reference_audio.languageCode]
+
+        # First, try to match visualImpaired flag if available
+        try:
+            # Check if the reference is a visual impaired track
+            if hasattr(reference_audio, 'visualImpaired') and reference_audio.visualImpaired:
+                # Keep only visual impaired tracks
+                visual_impaired_streams = [s for s in streams if hasattr(s, 'visualImpaired') and s.visualImpaired]
+                if visual_impaired_streams:
+                    streams = visual_impaired_streams
+            else:
+                # Filter out visual impaired tracks if reference is not visual impaired
+                non_visual_impaired_streams = [s for s in streams if not (hasattr(s, 'visualImpaired') and s.visualImpaired)]
+                if non_visual_impaired_streams:
+                    streams = non_visual_impaired_streams
+        except (AttributeError, TypeError):
+            # Fall back to descriptive terms if visualImpaired attribute is not available
+            #logger.debug("visualImpaired attribute not available, falling back to title-based detection")
+            pass
+
+        # Fallback to descriptive terms in title
+        ref_title = cls._get_stream_title(reference_audio)
+        if cls._contains_descriptive_terms(ref_title):
+            # Keep only descriptive tracks if reference is descriptive
+            descriptive_streams = [s for s in streams if cls._contains_descriptive_terms(cls._get_stream_title(s))]
+            if descriptive_streams:
+                streams = descriptive_streams
+        else:
+            # Filter out descriptive tracks if reference is not descriptive
+            non_descriptive_streams = [s for s in streams if not cls._contains_descriptive_terms(cls._get_stream_title(s))]
+            if non_descriptive_streams:
+                streams = non_descriptive_streams
+
+        return streams
+
+    @classmethod
+    def _filter_subtitle_streams(cls, subtitle_streams: List[SubtitleStream],
+                                 reference_subtitle: Optional[SubtitleStream],
+                                 reference_audio: Optional[AudioStream]) -> Optional[List[SubtitleStream]]:
+        """
+        Filter candidate subtitle streams for the reference subtitle stream.
+
+        Keeps streams with the same language code as the reference subtitle (or, when the
+        reference has no subtitle selected, the reference audio), then narrows to forced-only
+        and hearing-impaired tracks, mirroring the reference. Logic is unchanged from the
+        pre-refactor matcher.
+
+        Args:
+            subtitle_streams (List[SubtitleStream]): All available subtitle streams (raw, unfiltered).
+            reference_subtitle (Optional[SubtitleStream]): The reference subtitle stream.
+            reference_audio (Optional[AudioStream]): The reference audio stream, used when the
+                reference has no subtitle selected.
+
+        Returns:
+            Optional[List[SubtitleStream]]: The filtered candidate list, or None when there is
+                neither a reference subtitle nor a reference audio stream to match against.
+        """
+        if reference_subtitle is None:
+            if reference_audio is None:
+                return None
+            match_forced_only = True
+            match_hearing_impaired_only = False
+            language_code = reference_audio.languageCode
+        else:
+            match_forced_only = cls.is_forced_subtitle(reference_subtitle)
+            match_hearing_impaired_only = reference_subtitle.hearingImpaired
+            language_code = reference_subtitle.languageCode
+
+        # We only want streams with the same language code
+        streams = [s for s in subtitle_streams if s.languageCode == language_code]
+        if match_forced_only:
+            streams = [s for s in streams if cls.is_forced_subtitle(s)]
+        if match_hearing_impaired_only:
+            streams = [s for s in streams if s.hearingImpaired]
+        return streams
+
+    @staticmethod
+    def _select_best(streams: List, scores: List[int], reference_index: Optional[int]):
+        """
+        Pick the best stream from scored candidates.
+
+        The highest score always wins. When several candidates tie at the top score (for
+        example duplicate track names), the candidate that sits at the same position within
+        the filtered candidate list as the reference's selected stream is preferred, so a
+        user's deliberate pick of one duplicate is preserved across episodes, including when
+        the track layout shifts. Otherwise the first tied candidate is kept (previous behavior).
+
+        Args:
+            streams (List): The scored candidate streams, in filtered-list order.
+            scores (List[int]): The score per candidate, aligned with `streams`.
+            reference_index (Optional[int]): Position of the reference's selected stream within
+                its own filtered candidate list, or None.
+
+        Returns:
+            The best matching stream.
+        """
+        best = max(scores)
+        tied = [s for s, sc in zip(streams, scores) if sc == best]
+        if len(tied) == 1:
+            return tied[0]
+        if reference_index is not None and reference_index < len(streams):
+            candidate = streams[reference_index]
+            if candidate in tied:
+                return candidate
+        return tied[0]
+
+    @staticmethod
+    def _reference_index(selected_stream, filtered_streams: Optional[List]) -> Optional[int]:
+        """
+        Get the position of the selected stream within a filtered candidate list.
+
+        Args:
+            selected_stream: The selected stream, or None.
+            filtered_streams (Optional[List]): The filtered candidate list, or None.
+
+        Returns:
+            Optional[int]: The 0-based position, or None when it cannot be determined.
+        """
+        if selected_stream is None or filtered_streams is None:
+            return None
+        for index, stream in enumerate(filtered_streams):
+            if stream.id == selected_stream.id:
+                return index
+        return None
 
     @staticmethod
     def _get_selected_streams(episode: Union[Episode, MediaPart]) -> Tuple[Optional[AudioStream], Optional[SubtitleStream]]:
