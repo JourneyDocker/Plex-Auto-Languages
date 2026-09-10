@@ -1,18 +1,10 @@
 """
-Tests for TrackChanges track matching, focused on duplicate track names (issue #110).
+Tests for tie-breaking track selection by stream position.
 
-The fakes are duck-typed, so no Plex server is required. The scenarios cover:
-
-- duplicate subtitle names: the user's pick of one duplicate (first or second of the pair)
-  is preserved on other episodes;
-- the reporter's forced-track layout shift, where the same pair sits at different raw
-  indices in each episode and the reference position within the filtered candidate list
-  (not the raw index) must be used;
-- duplicate audio names using the same tie-break;
-- score priority: a genuinely higher score beats the reference position, and reversed
-  pair order is resolved by target position;
-- out-of-range reference position falls back to the first top-scoring stream;
-- no changes computed when neither the reference nor the target has a subtitle selected.
+When several candidate streams tie at the top match score (for example, duplicate
+track names), the candidate at the same position within the filtered candidate list
+as the reference's selected stream is chosen. When scores are not tied, the score
+wins regardless of position.
 """
 
 from plex_auto_languages.constants import EventType
@@ -40,8 +32,8 @@ def compute(reference, target):
 
 
 def test_duplicate_subtitles_reference_second_selected_selects_target_second():
-    # Regression scenario from issue #110: the reference's second of an identically named
-    # pair must be propagated, not the first.
+    # Identically named subtitle pair: the reference has the second of the pair
+    # selected, so the target must end up with its second selected, not the first.
     ref_audio = FakeAudioStream(title="English", selected=True)
     ref_sub_first = FakeSubtitleStream(title="English (PGS)")
     ref_sub_second = FakeSubtitleStream(title="English (PGS)", selected=True)
@@ -59,6 +51,7 @@ def test_duplicate_subtitles_reference_second_selected_selects_target_second():
 
 
 def test_duplicate_subtitles_reference_first_selected_selects_target_first():
+    # Same pair, reference has the first selected: the target's first must be kept.
     ref_audio = FakeAudioStream(title="English", selected=True)
     ref_sub_first = FakeSubtitleStream(title="English (PGS)", selected=True)
     ref_sub_second = FakeSubtitleStream(title="English (PGS)")
@@ -75,11 +68,11 @@ def test_duplicate_subtitles_reference_first_selected_selects_target_first():
     assert target_part.selected_subtitle_stream is tgt_sub_first
 
 
-def test_forced_track_shifted_layout_preserves_duplicate_pick():
-    # The reporter's example: the reference episode has a forced track that the target
-    # lacks, so the duplicate pair sits at raw indices 4/5 in the reference and 3/4 in
-    # the target. The reference's second of the pair (raw 5) was selected, so the
-    # target's second of the pair (raw 4) must be selected.
+def test_layout_shift_keeps_same_filtered_position():
+    # The reference has a forced track the target lacks, so the duplicate pair sits
+    # at different raw indices (4/5 in the reference, 3/4 in the target). Position
+    # is measured within the filtered list, so the reference's second of the pair
+    # maps to the target's second of the pair.
     ref_audio = FakeAudioStream(title="English", selected=True)
     reference_subs = [
         FakeSubtitleStream(title="Français", language_code="fr"),        # raw 0
@@ -127,8 +120,8 @@ def test_duplicate_audio_reference_second_selected_selects_target_second():
 
 
 def test_scores_not_tied_score_wins_over_reference_position():
-    # A genuine score difference (codec) must beat the reference position, which here
-    # points at the weaker candidate.
+    # A genuine score difference (codec) must beat the reference position, even when
+    # the reference position points at the weaker candidate.
     ref_audio = FakeAudioStream(title="English", selected=True)
     ref_sub_first = FakeSubtitleStream(title="English (PGS)", codec="mov_text", selected=True)
     ref_sub_second = FakeSubtitleStream(title="English (PGS)", codec="mov_text")
@@ -146,17 +139,16 @@ def test_scores_not_tied_score_wins_over_reference_position():
     assert target_part.selected_subtitle_stream is tgt_sub_second
 
 
-def test_reversed_pair_order_tie_break_uses_target_position():
-    # With identical names the tie-break is by position within the filtered list, so a
-    # reversed layout resolves to the target's first candidate when the reference pick
-    # was its first.
+def test_tied_scores_with_reversed_pair_order_use_target_position():
+    # With identical names the tie-break is the position within the target's filtered
+    # list, so the reference's first-of-pair pick maps to the target's first slot even
+    # when the underlying streams are in a different order.
     ref_audio = FakeAudioStream(title="English", selected=True)
     ref_sub_first = FakeSubtitleStream(title="English (PGS)", selected=True)
     ref_sub_second = FakeSubtitleStream(title="English (PGS)")
     reference, _ = make_episode([ref_audio], [ref_sub_first, ref_sub_second])
 
     tgt_audio = FakeAudioStream(title="English", selected=True)
-    # Reversed order: the stream that was second in the reference comes first here.
     tgt_sub_reversed_first = FakeSubtitleStream(title="English (PGS)")
     tgt_sub_reversed_second = FakeSubtitleStream(title="English (PGS)", selected=True)
     target, target_part = make_episode([tgt_audio],
@@ -169,7 +161,7 @@ def test_reversed_pair_order_tie_break_uses_target_position():
 
 
 def test_reference_position_out_of_range_falls_back_to_first():
-    # The reference picked the third of three duplicates; the target only has two.
+    # The reference has three duplicates with the third selected; the target has two.
     # The tie-break must not crash and must fall back to the first top-scoring stream.
     ref_audio = FakeAudioStream(title="English", selected=True)
     reference_subs = [
@@ -191,8 +183,8 @@ def test_reference_position_out_of_range_falls_back_to_first():
 
 
 def test_no_subtitle_selected_anywhere_no_changes():
-    # Reference has subtitle streams but none selected (subtitles off), and the target
-    # has none selected either: nothing must change and no reset must be issued.
+    # Reference and target have subtitle streams but none selected: nothing must
+    # change and no reset must be issued.
     ref_audio = FakeAudioStream(title="English", selected=True)
     reference, _ = make_episode([ref_audio], [FakeSubtitleStream(title="English")])
 
