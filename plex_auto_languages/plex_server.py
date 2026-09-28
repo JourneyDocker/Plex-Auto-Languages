@@ -17,7 +17,7 @@ from plexapi.server import PlexServer as BasePlexServer
 
 from plex_auto_languages.utils.logger import get_logger
 from plex_auto_languages.utils.configuration import Configuration
-from plex_auto_languages.plex_alert_handler import PlexAlertHandler
+from plex_auto_languages.plex_alert_handler import CONSUMER_WORKERS, PlexAlertHandler
 from plex_auto_languages.plex_alert_listener import PlexAlertListener
 from plex_auto_languages.track_changes import TrackChanges, NewOrUpdatedTrackChanges
 from plex_auto_languages.utils.notifier import Notifier
@@ -56,6 +56,50 @@ class SelectiveVerifySession(requests.Session):
         return super().request(method, url, *_, **kwargs)
 
 
+def create_plex_session(whitelist_host=None, pool_maxsize: Optional[int] = None,
+                       pool_connections: Optional[int] = None) -> requests.Session:
+    """Build a requests session with a tuned urllib3 connection pool.
+
+    The default adapter (pool_connections=10, pool_maxsize=10) is too small
+    for the combined concurrency of the user fan-out pool and the alert
+    consumer workers hitting the same Plex host, which triggers urllib3's
+    "Connection pool is full, discarding connection" warning. Pool sizes
+    derive from the actual worker counts so they track future tuning of
+    either pool instead of going stale.
+
+    Args:
+        whitelist_host: Hostname to exempt from SSL verification (https only).
+            When given, a SelectiveVerifySession is returned; otherwise a
+            plain requests.Session.
+        pool_maxsize: Max connections per host to keep pooled. Defaults to
+            the derived size (needed + 10 headroom, min 20).
+        pool_connections: Number of host pools to cache. Defaults to the
+            derived size (needed, min 10).
+    """
+    if pool_maxsize is None or pool_connections is None:
+        # _max_workers is private to ThreadPoolExecutor but this is the
+        # owning module, so direct access is fine; fall back to the
+        # construction value if the implementation ever changes.
+        fanout_workers = getattr(_USER_FANOUT_POOL, "_max_workers", 5)
+        needed = CONSUMER_WORKERS + fanout_workers + 2  # consumers + fan-out + main + margin
+        if pool_maxsize is None:
+            pool_maxsize = max(30, needed + 10)
+        if pool_connections is None:
+            pool_connections = max(20, needed)
+    if whitelist_host is not None:
+        session = SelectiveVerifySession(whitelist=[whitelist_host])
+    else:
+        session = requests.Session()
+    adapter = requests.adapters.HTTPAdapter(
+        pool_connections=pool_connections,
+        pool_maxsize=pool_maxsize,
+        pool_block=False,
+    )
+    session.mount("http://", adapter)
+    session.mount("https://", adapter)
+    return session
+
+
 class UnprivilegedPlexServer():
     """
     Base class for interacting with a Plex server with limited privileges.
@@ -74,7 +118,7 @@ class UnprivilegedPlexServer():
         _sections_cache_time (datetime): When the sections cache was last refreshed.
     """
 
-    def __init__(self, url: str, token: str, session: requests.Session = requests.Session()):
+    def __init__(self, url: str, token: str, session: Optional[requests.Session] = None):
         """
         Initialize an unprivileged Plex server connection.
 
@@ -83,6 +127,10 @@ class UnprivilegedPlexServer():
             token (str): Authentication token for the Plex server.
             session (requests.Session, optional): HTTP session to use for requests. Defaults to a new session.
         """
+        if session is None:
+            parsed_url = urlparse(url)
+            whitelist_host = parsed_url.hostname if parsed_url.scheme == "https" else None
+            session = create_plex_session(whitelist_host=whitelist_host)
         self._session = session
         self._plex_url = url
         self._plex = self._get_server(url, token, self._session)
@@ -357,9 +405,8 @@ class PlexServer(UnprivilegedPlexServer):
             UserNotFound: If the user associated with the provided token cannot be found.
         """
         parsed_url = urlparse(url)
-        session = requests.Session()
-        if parsed_url.scheme == "https":
-            session = SelectiveVerifySession(whitelist=[parsed_url.hostname])
+        whitelist_host = parsed_url.hostname if parsed_url.scheme == "https" else None
+        session = create_plex_session(whitelist_host=whitelist_host)
 
         self.notifier = notifier
         self.config = config
