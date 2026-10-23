@@ -13,5 +13,5 @@ jobs:
     uses: JourneyDocker/github-workflows/.github/workflows/docker-publish.yml@main
     with:
       tag: latest
-      platforms: linux/amd64,linux/arm64
+      platforms: linux/amd64,linux/arm64,linux/arm
     secrets: inherit
