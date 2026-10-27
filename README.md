@@ -210,6 +210,7 @@ notifications:
 scheduler:
   enable: true
   schedule_time: "02:00"
+  schedule_days: []      # Days to run (e.g. ['monday', 'wednesday', 'friday']); empty = every day
 data_path: ""  # Path for system/cache files
 debug: false   # Enable debug logs
 ```
@@ -233,6 +234,7 @@ debug: false   # Enable debug logs
 | `IGNORE_FILEPATTERNS`           | *(none)*      | Comma-separated list of regex patterns matched against media file paths. Episodes with matching files are ignored (e.g. `.*coming\.soon.*,.*trailer.*`). |
 | `SCHEDULER_ENABLE`              | `true`        | Enables or disables the scheduler feature.                                                                                   |
 | `SCHEDULER_SCHEDULE_TIME`       | `02:00`       | Time (in `HH:MM` format) when the scheduler starts its task.                                                                 |
+| `SCHEDULER_SCHEDULE_DAYS`       | *(none)*      | Comma-separated list of days the scheduler runs on (e.g. `monday,wednesday,friday`). Empty = runs every day.                 |
 | `NOTIFICATIONS_ENABLE`          | `false`       | Enables or disables notifications.                                                                                           |
 | `NOTIFICATIONS_APPRISE_CONFIGS` | `[]`          | JSON array of Apprise notification configurations. See Apprise docs for more information: https://github.com/caronc/apprise. |
 | `DEBUG`                         | `false`       | Enables debug mode for verbose logging.                                                                                      |

@@ -5,7 +5,7 @@ import warnings
 import re
 import concurrent.futures
 from urllib.parse import urlparse
-from typing import Union, Callable, List, Tuple, Optional
+from typing import Union, Callable, Iterator, List, Tuple, Optional
 from datetime import datetime, timedelta
 from requests import ConnectionError as RequestsConnectionError
 from urllib3.exceptions import InsecureRequestWarning
@@ -17,16 +17,24 @@ from plexapi.server import PlexServer as BasePlexServer
 
 from plex_auto_languages.utils.logger import get_logger
 from plex_auto_languages.utils.configuration import Configuration
-from plex_auto_languages.plex_alert_handler import PlexAlertHandler
+from plex_auto_languages.plex_alert_handler import CONSUMER_WORKERS, PlexAlertHandler
 from plex_auto_languages.plex_alert_listener import PlexAlertListener
 from plex_auto_languages.track_changes import TrackChanges, NewOrUpdatedTrackChanges
 from plex_auto_languages.utils.notifier import Notifier
+from plex_auto_languages.episode_ref import EpisodeRef
 from plex_auto_languages.plex_server_cache import PlexServerCache
 from plex_auto_languages.constants import EventType
 from plex_auto_languages.exceptions import UserNotFound
 
 
 logger = get_logger()
+
+# Shared pool for the per-episode fan-out to all users inside
+# process_new_or_updated_episode. Reused across episodes instead of creating and
+# tearing down a ThreadPoolExecutor on every single episode (which, under the
+# parallelized alert consumer, would otherwise churn thread creation constantly).
+_USER_FANOUT_POOL = concurrent.futures.ThreadPoolExecutor(
+    max_workers=5, thread_name_prefix="user-fanout")
 
 
 class SelectiveVerifySession(requests.Session):
@@ -48,6 +56,50 @@ class SelectiveVerifySession(requests.Session):
         return super().request(method, url, *_, **kwargs)
 
 
+def create_plex_session(whitelist_host=None, pool_maxsize: Optional[int] = None,
+                       pool_connections: Optional[int] = None) -> requests.Session:
+    """Build a requests session with a tuned urllib3 connection pool.
+
+    The default adapter (pool_connections=10, pool_maxsize=10) is too small
+    for the combined concurrency of the user fan-out pool and the alert
+    consumer workers hitting the same Plex host, which triggers urllib3's
+    "Connection pool is full, discarding connection" warning. Pool sizes
+    derive from the actual worker counts so they track future tuning of
+    either pool instead of going stale.
+
+    Args:
+        whitelist_host: Hostname to exempt from SSL verification (https only).
+            When given, a SelectiveVerifySession is returned; otherwise a
+            plain requests.Session.
+        pool_maxsize: Max connections per host to keep pooled. Defaults to
+            the derived size (needed + 10 headroom, min 20).
+        pool_connections: Number of host pools to cache. Defaults to the
+            derived size (needed, min 10).
+    """
+    if pool_maxsize is None or pool_connections is None:
+        # _max_workers is private to ThreadPoolExecutor but this is the
+        # owning module, so direct access is fine; fall back to the
+        # construction value if the implementation ever changes.
+        fanout_workers = getattr(_USER_FANOUT_POOL, "_max_workers", 5)
+        needed = CONSUMER_WORKERS + fanout_workers + 2  # consumers + fan-out + main + margin
+        if pool_maxsize is None:
+            pool_maxsize = max(30, needed + 10)
+        if pool_connections is None:
+            pool_connections = max(20, needed)
+    if whitelist_host is not None:
+        session = SelectiveVerifySession(whitelist=[whitelist_host])
+    else:
+        session = requests.Session()
+    adapter = requests.adapters.HTTPAdapter(
+        pool_connections=pool_connections,
+        pool_maxsize=pool_maxsize,
+        pool_block=False,
+    )
+    session.mount("http://", adapter)
+    session.mount("https://", adapter)
+    return session
+
+
 class UnprivilegedPlexServer():
     """
     Base class for interacting with a Plex server with limited privileges.
@@ -66,7 +118,7 @@ class UnprivilegedPlexServer():
         _sections_cache_time (datetime): When the sections cache was last refreshed.
     """
 
-    def __init__(self, url: str, token: str, session: requests.Session = requests.Session()):
+    def __init__(self, url: str, token: str, session: Optional[requests.Session] = None):
         """
         Initialize an unprivileged Plex server connection.
 
@@ -75,6 +127,10 @@ class UnprivilegedPlexServer():
             token (str): Authentication token for the Plex server.
             session (requests.Session, optional): HTTP session to use for requests. Defaults to a new session.
         """
+        if session is None:
+            parsed_url = urlparse(url)
+            whitelist_host = parsed_url.hostname if parsed_url.scheme == "https" else None
+            session = create_plex_session(whitelist_host=whitelist_host)
         self._session = session
         self._plex_url = url
         self._plex = self._get_server(url, token, self._session)
@@ -155,40 +211,78 @@ class UnprivilegedPlexServer():
         except NotFound:
             return None
 
+    def iter_episodes(self, page_size: int = 1000) -> Iterator[Episode]:
+        """
+        Iterate over all episodes from non-ignored libraries, one page at a time.
+
+        Each page is released once consumed, so peak memory stays flat regardless
+        of library size. Prefer this over :meth:`episodes` when episodes are
+        consumed one at a time, as that method holds the whole library at once.
+
+        Args:
+            page_size (int): Number of episodes to request per page.
+
+        Yields:
+            Episode: Episodes from non-ignored Plex libraries.
+        """
+        if hasattr(self, 'should_ignore_library'):
+            # For PlexServer instances that have the should_ignore_library method
+            sections = self.get_show_sections()
+        else:
+            # For UnprivilegedPlexServer instances or fallback. Episodes only ever
+            # live in show sections, so this covers the same items as the previous
+            # library-wide query without requesting the whole library at once.
+            sections = [s for s in self._plex.library.sections() if isinstance(s, ShowSection)]
+
+        for section in sections:
+            container_start = 0
+            while True:
+                # `maxresults` is required, not redundant: without it fetchItems()
+                # paginates internally up to the section's total size and returns
+                # the whole thing in one list, which is the behaviour this method
+                # exists to avoid. Capping it to one page keeps this loop in charge.
+                # Sorting by addedAt keeps episodes imported mid-scan after the
+                # cursor, so they are picked up at the tail rather than shifting
+                # the offsets of pages that have not been read yet.
+                page = section.search(
+                    libtype="episode",
+                    sort="addedAt:asc",
+                    container_start=container_start,
+                    container_size=page_size,
+                    maxresults=page_size
+                )
+                if not page:
+                    break
+                for episode in page:
+                    # A section search returns librarySectionTitle on the
+                    # MediaContainer, not on each Video, so every episode here has
+                    # it set to None. Reading it would send plexapi looking for a
+                    # value it does not have and reload the whole item over the
+                    # network (base.py:657), once per episode. Stamp it from the
+                    # section that produced them instead - the same propagation
+                    # plexapi does onto a show's children (video.py:1318).
+                    episode.librarySectionTitle = section.title
+                yield from page
+                # Advance by what was actually returned rather than by page_size:
+                # a short page mid-section would otherwise leave a permanent gap,
+                # and a skipped episode is not harmless here. It gets evicted from
+                # episode_parts, so the next refresh sees it as newly added and
+                # re-applies the show's track selection over every user's manual
+                # choice.
+                container_start += len(page)
+
     def episodes(self) -> List[Episode]:
         """
         Get all episodes from non-ignored libraries in the Plex server.
 
+        Note:
+            This holds every episode in memory at once. Prefer :meth:`iter_episodes`
+            when the episodes can be consumed one at a time.
+
         Returns:
             List[Episode]: A list of all episodes in non-ignored Plex libraries.
         """
-        if hasattr(self, 'should_ignore_library'):
-            # For PlexServer instances that have the should_ignore_library method
-            non_ignored_sections = self.get_show_sections()
-            episodes = []
-            for section in non_ignored_sections:
-                section_episodes = section.all(libtype="episode", container_size=1000)
-                episodes.extend(section_episodes)
-            return episodes
-        else:
-            # For UnprivilegedPlexServer instances or fallback
-            return self._plex.library.all(libtype="episode", container_size=1000)
-
-    def get_recently_added_episodes(self, minutes: int) -> List[Episode]:
-        """
-        Get episodes that were recently added to non-ignored Plex libraries.
-
-        Args:
-            minutes (int): Number of minutes to look back for recently added episodes.
-
-        Returns:
-            List[Episode]: A list of episodes added within the specified time frame.
-        """
-        episodes = []
-        for section in self.get_show_sections():
-            recent = section.searchEpisodes(sort="addedAt:desc", filters={"addedAt>>": f"{minutes}m"})
-            episodes.extend(recent)
-        return episodes
+        return list(self.iter_episodes())
 
     def get_show_sections(self) -> List[ShowSection]:
         """
@@ -311,9 +405,8 @@ class PlexServer(UnprivilegedPlexServer):
             UserNotFound: If the user associated with the provided token cannot be found.
         """
         parsed_url = urlparse(url)
-        session = requests.Session()
-        if parsed_url.scheme == "https":
-            session = SelectiveVerifySession(whitelist=[parsed_url.hostname])
+        whitelist_host = parsed_url.hostname if parsed_url.scheme == "https" else None
+        session = create_plex_session(whitelist_host=whitelist_host)
 
         self.notifier = notifier
         self.config = config
@@ -556,6 +649,91 @@ class PlexServer(UnprivilegedPlexServer):
         """
         return section_title in self.config.get("ignore_libraries")
 
+    def get_recently_added_episode_refs(self, minutes: int) -> List[EpisodeRef]:
+        """
+        Get refs for episodes added in the last `minutes` minutes.
+
+        Returns refs rather than Episodes so this shares one shape with
+        refresh_library_cache(). Its only consumer (the library-scan handler)
+        does not check filepaths, so part files are not collected.
+        """
+        refs = []
+        for section in self.get_show_sections():
+            recent = section.searchEpisodes(sort="addedAt:desc", filters={"addedAt>>": f"{minutes}m"})
+            for episode in recent:
+                # Same reason as iter_episodes: unstamped, reading this field
+                # costs a full metadata reload per episode.
+                episode.librarySectionTitle = section.title
+                refs.append(EpisodeRef.from_episode(episode))
+        return refs
+
+    @staticmethod
+    def format_ref_name(show_title: str | None, season_number: int | None,
+                        episode_number: int | None) -> str:
+        """Format a log name from an EpisodeRef's primitives.
+
+        Separate from get_episode_short_name on purpose. That one reads
+        show().title via a live fetch; this reads grandparentTitle off the ref.
+        They disagree on real data - a show with an empty title reports
+        grandparentTitle = None while show().title == "" - so they are different
+        functions rather than one shared formatter pretending otherwise.
+        """
+        season_num = season_number if season_number is not None else 0
+        episode_num = episode_number if episode_number is not None else 0
+        if show_title is None:
+            return f"Unknown Show (S{season_num:02}E{episode_num:02})"
+        return f"'{show_title}' (S{season_num:02}E{episode_num:02})"
+
+    def _matches_ignore_filepattern(self, files) -> bool:
+        """Whether any of these recorded file paths matches an ignore pattern.
+
+        The ref-path counterpart of should_ignore_filepath, which keeps its own
+        copy of this loop so its early return stays ahead of episode.media.
+        """
+        patterns = self.config.get("ignore_filepatterns")
+        patterns = [p for p in patterns if p]
+        if not patterns:
+            return False
+        for filepath in files:
+            if not filepath:
+                continue
+            filepath_lower = filepath.lower()
+            for pattern in patterns:
+                try:
+                    if re.search(pattern, filepath_lower, re.IGNORECASE):
+                        return True
+                except re.error as e:
+                    logger.warning(f"Invalid regex pattern '{pattern}': {e}")
+        return False
+
+    def should_ignore_show_by_key(self, show_key, memo: dict | None = None) -> bool:
+        """Label-based ignore check for a show identified by its rating key.
+
+        Callers holding an EpisodeRef have the key but not the Show.
+
+        `memo` is a caller-owned dict that must not outlive the loop using it.
+        Roughly 2,000 shows back 65,906 episodes, so memoising turns one fetch
+        per episode into one per show. It is scoped to a single loop precisely
+        so it cannot serve stale labels across runs.
+
+        A show that cannot be fetched is not ignored: plexapi raises NotFound
+        rather than returning None, and today an escaping NotFound aborts the
+        entire deep-analysis loop.
+        """
+        if show_key is None:
+            return False
+        if memo is not None and show_key in memo:
+            return memo[show_key]
+        try:
+            show = self._plex.fetchItem(show_key)
+            ignored = show is not None and self.should_ignore_show(show)
+        except Exception as e:
+            logger.warning(f"Unable to fetch show {show_key}: {e}")
+            ignored = False
+        if memo is not None:
+            memo[show_key] = ignored
+        return ignored
+
     def should_ignore_show(self, show: Show) -> bool:
         """
         Check if a show should be ignored based on its labels or its library.
@@ -647,13 +825,12 @@ class PlexServer(UnprivilegedPlexServer):
                 logger.error(f"Error processing user {user_id}: {e}")
                 return None
 
-        with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
-            futures = {executor.submit(process_user, user_id): user_id for user_id in self.get_all_user_ids()}
-            for future in concurrent.futures.as_completed(futures):
-                result = future.result()
-                if result is not None:
-                    username, reference, user_item = result
-                    track_changes.change_track_for_user(username, reference, user_item)
+        futures = {_USER_FANOUT_POOL.submit(process_user, user_id): user_id for user_id in self.get_all_user_ids()}
+        for future in concurrent.futures.as_completed(futures):
+            result = future.result()
+            if result is not None:
+                username, reference, user_item = result
+                track_changes.change_track_for_user(username, reference, user_item)
 
         # Notify changes
         if track_changes.has_changes:
@@ -730,28 +907,32 @@ class PlexServer(UnprivilegedPlexServer):
 
         # Scan library
         added, updated = self.cache.refresh_library_cache()
-        for item in added:
-            if self.should_ignore_library(item.librarySectionTitle):
+        # Scoped to this loop so it cannot serve stale labels on a later run.
+        show_memo: dict = {}
+        for ref in added:
+            if self.should_ignore_library(ref.library_section_title):
                 continue
-            if self.should_ignore_show(item.show()):
+            if self.should_ignore_show_by_key(ref.show_key, show_memo):
                 continue
-            if self.should_ignore_filepath(item):
+            if self._matches_ignore_filepattern(ref.part_files):
                 continue
-            if not self.cache.should_process_recently_added(item.key, item.addedAt):
+            if not self.cache.should_process_recently_added(ref.key, ref.added_at):
                 continue
-            logger.info(f"[Scheduler] Processing newly added episode {self.get_episode_short_name(item)}")
-            self.process_new_or_updated_episode(item.key, EventType.SCHEDULER, True)
-        for item in updated:
-            if self.should_ignore_library(item.librarySectionTitle):
+            name = self.format_ref_name(ref.show_title, ref.season_number, ref.episode_number)
+            logger.info(f"[Scheduler] Processing newly added episode {name}")
+            self.process_new_or_updated_episode(ref.key, EventType.SCHEDULER, True)
+        for ref in updated:
+            if self.should_ignore_library(ref.library_section_title):
                 continue
-            if self.should_ignore_show(item.show()):
+            if self.should_ignore_show_by_key(ref.show_key, show_memo):
                 continue
-            if self.should_ignore_filepath(item):
+            if self._matches_ignore_filepattern(ref.part_files):
                 continue
-            if not self.cache.should_process_recently_updated(item.key):
+            if not self.cache.should_process_recently_updated(ref.key):
                 continue
-            logger.info(f"[Scheduler] Processing updated episode {self.get_episode_short_name(item)}")
-            self.process_new_or_updated_episode(item.key, EventType.SCHEDULER, False)
+            name = self.format_ref_name(ref.show_title, ref.season_number, ref.episode_number)
+            logger.info(f"[Scheduler] Processing updated episode {name}")
+            self.process_new_or_updated_episode(ref.key, EventType.SCHEDULER, False)
         logger.info("[Scheduler] Deep analysis completed")
 
     def stop(self) -> None:

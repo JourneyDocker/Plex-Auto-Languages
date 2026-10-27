@@ -6,6 +6,7 @@ import yaml
 
 from plex_auto_languages.utils.logger import get_logger
 from plex_auto_languages.utils.shared import get_platform_app_directory, is_docker
+from plex_auto_languages.utils.scheduler import VALID_DAYS
 from plex_auto_languages.exceptions import InvalidConfiguration
 
 
@@ -94,7 +95,7 @@ def env_dict_update(original, var_name: str = "", dot_prefix: str = "", changes:
         if isinstance(value, Mapping):
             original[key], _ = env_dict_update(original[key], new_var_name, dot_key, changes)
         elif new_var_name in os.environ:
-            if "schedule_time" in new_var_name.lower():
+            if "schedule_time" in new_var_name.lower() or "schedule_days" in new_var_name.lower():
                 original[key] = os.environ.get(new_var_name)
             else:
                 original[key] = yaml.safe_load(os.environ.get(new_var_name))
@@ -256,6 +257,10 @@ class Configuration:
         if isinstance(ignore_filepatterns_config, str):
             self._config["ignore_filepatterns"] = ignore_filepatterns_config.split(",")
 
+        schedule_days_config = self.get("scheduler.schedule_days")
+        if isinstance(schedule_days_config, str):
+            self._config["scheduler"]["schedule_days"] = [d.strip() for d in schedule_days_config.split(",") if d.strip()]
+
     def _validate_config(self):
         """
         Validates the configuration for required values and correct formats.
@@ -287,9 +292,17 @@ class Configuration:
         if not isinstance(self.get("ignore_filepatterns"), list):
             logger.error("The 'ignore_filepatterns' parameter must be a list or a string-based comma separated list")
             raise InvalidConfiguration
-        if self.get("scheduler.enable") and not re.match(r"^\d{2}:\d{2}$", str(self.get("scheduler.schedule_time"))):
-            logger.error("A valid 'schedule_time' parameter with the format 'HH:MM' is required (ex: \"02:30\")")
-            raise InvalidConfiguration
+        if self.get("scheduler.enable"):
+            if not re.match(r"^\d{2}:\d{2}$", str(self.get("scheduler.schedule_time"))):
+                logger.error("A valid 'schedule_time' parameter with the format 'HH:MM' is required (ex: \"02:30\")")
+                raise InvalidConfiguration
+            schedule_days = self.get("scheduler.schedule_days")
+            if schedule_days:
+                invalid = [d for d in schedule_days if d not in VALID_DAYS]
+                if invalid:
+                    logger.error(f"Invalid 'schedule_days' value(s): {', '.join(invalid)}. "
+                                 f"Accepted: {', '.join(sorted(VALID_DAYS))}")
+                    raise InvalidConfiguration
         if self.get("data_path") != "" and not os.path.exists(self.get("data_path")):
             logger.error("The 'data_path' parameter must be a valid path")
             raise InvalidConfiguration

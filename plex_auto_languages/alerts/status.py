@@ -1,5 +1,6 @@
 from __future__ import annotations
 from typing import TYPE_CHECKING
+from datetime import datetime, timedelta
 
 from plex_auto_languages.alerts.base import PlexAlert
 from plex_auto_languages.utils.logger import get_logger
@@ -10,6 +11,15 @@ if TYPE_CHECKING:
 
 
 logger = get_logger()
+
+# A full refresh_library_cache() iterates every episode in the library and takes
+# minutes on large libraries. Plex can emit scan-complete alerts every couple of
+# minutes (periodic scanning, an external tool, or its own re-scans), and running
+# the whole-library iteration for each one keeps the cache hot and hammers the
+# server non-stop. Within this window of the last refresh, fall back to the cheap
+# recently-added query - single-item updates are already covered by timeline
+# alerts, and the next full refresh reconciles anything the query misses.
+SCAN_REFRESH_COOLDOWN = timedelta(minutes=5)
 
 
 class PlexStatus(PlexAlert):
@@ -58,49 +68,59 @@ class PlexStatus(PlexAlert):
         logger.debug("[Status] The Plex server scanned the library")
 
         if plex.config.get("refresh_library_on_scan"):
-            added, updated = plex.cache.refresh_library_cache()
+            if datetime.now() - plex.cache.last_refresh > SCAN_REFRESH_COOLDOWN:
+                added, updated = plex.cache.refresh_library_cache()
+            else:
+                logger.debug("[Status] Library cache refreshed recently; using recently-added query")
+                added = plex.get_recently_added_episode_refs(minutes=5)
+                updated = []
         else:
-            added = plex.get_recently_added_episodes(minutes=5)
+            added = plex.get_recently_added_episode_refs(minutes=5)
             updated = []
+
+        # Scoped to this handler call so it cannot serve stale labels later.
+        show_memo: dict = {}
 
         # Process recently added episodes
         if len(added) > 0:
             logger.debug(f"[Status] Found {len(added)} newly added episode(s)")
-            for item in added:
+            for ref in added:
+                name = plex.format_ref_name(ref.show_title, ref.season_number, ref.episode_number)
                 # Check if the library should be ignored
-                if plex.should_ignore_library(item.librarySectionTitle):
-                    logger.debug(f"[Status] Ignoring episode {plex.get_episode_short_name(item)} due to ignored library: '{item.librarySectionTitle}'")
+                if plex.should_ignore_library(ref.library_section_title):
+                    logger.debug(f"[Status] Ignoring episode {name} due to ignored library: '{ref.library_section_title}'")
                     continue
 
                 # Check if the item should be ignored
-                if plex.should_ignore_show(item.show()):
+                if plex.should_ignore_show_by_key(ref.show_key, show_memo):
                     continue
 
                 # Check if the item has already been processed
-                if not plex.cache.should_process_recently_added(item.key, item.addedAt):
+                if not plex.cache.should_process_recently_added(ref.key, ref.added_at):
                     continue
 
                 # Change tracks for all users
-                logger.info(f"[Status] Processing newly added episode {plex.get_episode_short_name(item)}")
-                plex.process_new_or_updated_episode(item.key, EventType.NEW_EPISODE, True)
+                logger.info(f"[Status] Processing newly added episode {name}")
+                plex.process_new_or_updated_episode(ref.key, EventType.NEW_EPISODE, True)
 
         # Process updated episodes
         if len(updated) > 0:
             logger.debug(f"[Status] Found {len(updated)} updated episode(s)")
-            for item in updated:
+            for ref in updated:
+                name = plex.format_ref_name(ref.show_title, ref.season_number, ref.episode_number)
                 # Check if the library should be ignored
-                if plex.should_ignore_library(item.librarySectionTitle):
-                    logger.debug(f"[Status] Ignoring episode {plex.get_episode_short_name(item)} due to ignored library: '{item.librarySectionTitle}'")
+                if plex.should_ignore_library(ref.library_section_title):
+                    logger.debug(f"[Status] Ignoring episode {name} due to ignored library: '{ref.library_section_title}'")
                     continue
 
                 # Check if the item should be ignored
-                if plex.should_ignore_show(item.show()):
+                if plex.should_ignore_show_by_key(ref.show_key, show_memo):
                     continue
 
                 # Check if the item has already been processed
-                if not plex.cache.should_process_recently_updated(item.key):
+                if not plex.cache.should_process_recently_updated(ref.key):
                     continue
 
                 # Change tracks for all users
-                logger.info(f"[Status] Processing updated episode {plex.get_episode_short_name(item)}")
-                plex.process_new_or_updated_episode(item.key, EventType.UPDATED_EPISODE, False)
+                logger.info(f"[Status] Processing updated episode {name}")
+                plex.process_new_or_updated_episode(ref.key, EventType.UPDATED_EPISODE, False)
