@@ -13,7 +13,19 @@ from plex_auto_languages.utils.configuration import Configuration
 from plex_auto_languages.utils.healthcheck import HealthcheckServer
 
 # Version information
-__version__ = "1.6.1"
+__version__ = "1.7.0-dev"
+
+# Upper bound on the delay between reconnect cycles. A single cycle is already
+# capped inside PlexServer (CONNECTION_ATTEMPT_WINDOW_SECONDS), so this bounds
+# how late a recovered Plex is noticed without hammering a server that stays down.
+MAX_RECONNECT_DELAY = 60
+
+# Once Plex has been unreachable for this long, the watchdog exits so Docker can
+# restart the container. Kept at the interval 1.6.1 used in practice: a failed
+# reconnect cycle used to block for up to 25 minutes, so the old 300 s threshold
+# was always exceeded by the first cycle. Now that a cycle is capped at about a
+# minute, this keeps the same grace period instead of exiting five times sooner.
+OUTAGE_EXIT_SECONDS = 1500
 
 class PlexAutoLanguages:
     """
@@ -69,6 +81,10 @@ class PlexAutoLanguages:
         self.plex_alert_listener = None
         self.initializing = False
         self.reconnect_delay = 1  # Initial delay for exponential backoff
+        # Whether the "exit disabled, continuing to retry" warning has already
+        # been logged for the current outage, so a long outage does not repeat
+        # it on every cycle.
+        self._outage_warning_logged = False
 
         # Load the configuration file.
         self.config = Configuration(user_config_path)
@@ -250,22 +266,20 @@ class PlexAutoLanguages:
                 self.reconnect_delay = 1  # Reset backoff on successful connection
                 failed_reconnect_attempts = 0
                 unhealthy_since = None
+                self._outage_warning_logged = False
             except Exception as e:
-                logger.error(f"Initialization failed: {str(e)}")
+                logger.error(f"Initialization failed: {type(e).__name__}: {str(e)}")
                 self.initializing = False
                 if self.stop_signal:
                     break
                 failed_reconnect_attempts += 1
                 if unhealthy_since is None:
                     unhealthy_since = time.monotonic()
-                # Fail-fast watchdog: exit for Docker restart after prolonged unhealthiness
-                # 5 consecutive failures or 5 minutes unhealthy
-                if failed_reconnect_attempts >= 5 or (time.monotonic() - unhealthy_since) > 300:
-                    logger.error(f"Plex reconnection failed {failed_reconnect_attempts} times / unhealthy for {time.monotonic() - unhealthy_since:.0f}s - exiting for Docker restart")
-                    os._exit(1)
+                self._handle_prolonged_outage(
+                    failed_reconnect_attempts, time.monotonic() - unhealthy_since)
                 logger.info(f"Retrying in {self.reconnect_delay}s...")
                 sleep(self.reconnect_delay)
-                self.reconnect_delay = min(self.reconnect_delay * 2, 300)  # Exponential backoff, max 5 minutes
+                self.reconnect_delay = min(self.reconnect_delay * 2, MAX_RECONNECT_DELAY)  # Exponential backoff, max 1 minute
                 continue
             finally:
                 self.initializing = False # Clear initializing flag
@@ -288,15 +302,11 @@ class PlexAutoLanguages:
             self.plex.stop()
             if not self.stop_signal:
                 failed_reconnect_attempts += 1
-                elapsed_unhealthy = time.monotonic() - unhealthy_since
-                # Fail-fast watchdog: exit for Docker restart after prolonged unhealthiness
-                # 5 consecutive failures or 5 minutes unhealthy
-                if failed_reconnect_attempts >= 5 or elapsed_unhealthy > 300:
-                    logger.error(f"Plex reconnection failed {failed_reconnect_attempts} times / unhealthy for {elapsed_unhealthy:.0f}s - exiting for Docker restart")
-                    os._exit(1)
+                self._handle_prolonged_outage(
+                    failed_reconnect_attempts, time.monotonic() - unhealthy_since)
                 sleep(self.reconnect_delay)
                 logger.info(f"Attempting to reestablish connection to the Plex server (delay: {self.reconnect_delay}s)...")
-                self.reconnect_delay = min(self.reconnect_delay * 2, 300)  # Exponential backoff, max 5 minutes
+                self.reconnect_delay = min(self.reconnect_delay * 2, MAX_RECONNECT_DELAY)  # Exponential backoff, max 1 minute
 
         if self.scheduler:
             self.scheduler.shutdown()
@@ -304,6 +314,44 @@ class PlexAutoLanguages:
 
         # Shut down the health-check server
         self.healthcheck_server.shutdown()
+
+    def _handle_prolonged_outage(self, failed_reconnect_attempts: int, elapsed_unhealthy: float) -> None:
+        """
+        Decide what to do once reconnection has failed for too long.
+
+        The watchdog fires once Plex has been unreachable for
+        OUTAGE_EXIT_SECONDS (25 minutes). That matches the grace period 1.6.1
+        provided in practice: one failed reconnect cycle used to block for that
+        long, so the 300 s threshold was always exceeded by the first cycle.
+        Now that a cycle is capped at about a minute, the exit timing is
+        explicit instead of an accident of the retry budget.
+
+        By default the process exits so the container's restart policy can bring
+        PAL back cleanly. When `plex.exit_on_prolonged_outage` is disabled it
+        keeps retrying instead, which is the behaviour versions before 1.6.1
+        had.
+
+        Args:
+            failed_reconnect_attempts (int): Consecutive failed reconnect cycles.
+            elapsed_unhealthy (float): Seconds since the connection was lost.
+
+        Returns:
+            None
+        """
+        if elapsed_unhealthy <= OUTAGE_EXIT_SECONDS:
+            return
+        message = (
+            f"Plex reconnection failed {failed_reconnect_attempts} times / "
+            f"unhealthy for {elapsed_unhealthy:.0f}s"
+        )
+        if not self.config.get("plex.exit_on_prolonged_outage"):
+            if not self._outage_warning_logged:
+                logger.warning(
+                    f"{message} - 'plex.exit_on_prolonged_outage' is disabled, continuing to retry")
+                self._outage_warning_logged = True
+            return
+        logger.error(f"{message} - exiting for Docker restart")
+        os._exit(1)
 
     def alert_listener_error_callback(self, error: Exception) -> None:
         """

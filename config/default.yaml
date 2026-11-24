@@ -17,6 +17,7 @@ plexautolanguages:
     token: ""
     connection_max_retries: 300
     connection_retry_delay: 5
+    exit_on_prolonged_outage: true
 
   scheduler:
     enable: true

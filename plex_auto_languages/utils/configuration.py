@@ -312,6 +312,9 @@ class Configuration:
         if not isinstance(self.get("plex.connection_retry_delay"), (int, float)) or self.get("plex.connection_retry_delay") < 0:
             logger.error("The 'plex.connection_retry_delay' parameter must be a non-negative number")
             raise InvalidConfiguration
+        if not isinstance(self.get("plex.exit_on_prolonged_outage"), bool):
+            logger.error("The 'plex.exit_on_prolonged_outage' parameter must be a boolean")
+            raise InvalidConfiguration
         logger.info("The provided configuration has been successfully validated")
 
     def _add_system_config(self):

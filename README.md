@@ -171,8 +171,9 @@ The application can be configured using either:
 plex:
   url: "http://plex:32400"       # Required: Plex server URL
   token: "MY_PLEX_TOKEN"         # Required: Plex Token
-  connection_max_retries: 300    # Max connection attempts (default: 300)
+  connection_max_retries: 300    # Max attempts per reconnect cycle (default: 300, ~60 s cap)
   connection_retry_delay: 5      # Seconds between retries (default: 5)
+  exit_on_prolonged_outage: true # Exit for a Docker restart after a prolonged outage (default: true)
 ```
 
 #### Update Settings
@@ -221,8 +222,9 @@ debug: false   # Enable debug logs
 | ------------------------------- | ------------- | ---------------------------------------------------------------------------------------------------------------------------- |
 | `PLEX_URL`                      | *(none)*      | URL to your Plex server. Replace `http://plex:32400` with your actual Plex server URL.                                       |
 | `PLEX_TOKEN`                    | *(none)*      | Plex authentication token.                                                                                                   |
-| `PLEX_CONNECTION_MAX_RETRIES`   | `300`         | Maximum number of connection attempts when connecting to the Plex server.                                                    |
+| `PLEX_CONNECTION_MAX_RETRIES`   | `300`         | Maximum number of connection attempts per reconnect cycle. A cycle is also capped at about 60 seconds.                       |
 | `PLEX_CONNECTION_RETRY_DELAY`   | `5`           | Delay in seconds between connection retry attempts.                                                                          |
+| `PLEX_EXIT_ON_PROLONGED_OUTAGE` | `true`        | Exit after about 25 minutes of continuous unhealthiness so Docker can restart the container. Set to `false` to keep retrying instead. |
 | `UPDATE_LEVEL`                  | `show`        | Determines whether the update applies to the entire show or just the current season. Accepted values: `show`, `season`.      |
 | `UPDATE_STRATEGY`               | `next`        | Chooses whether to update all episodes or only the next one. Accepted values: `all`, `next`.                                 |
 | `TRIGGER_ON_PLAY`               | `true`        | If set to true, playing an episode triggers a language update.                                                               |

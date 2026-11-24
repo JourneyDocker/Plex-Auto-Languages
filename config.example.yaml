@@ -50,10 +50,16 @@ plexautolanguages:
     url: ""
     # A valid Plex Token (required)
     token: ""
-    # Maximum number of connection attempts when connecting to the Plex server, defaults to 300
+    # Maximum number of connection attempts per reconnect cycle, defaults to 300.
+    # A cycle is also capped at about 60 seconds so a long Plex outage is retried
+    # by the main loop instead of blocking startup for the whole attempt budget.
     connection_max_retries: 300
     # Delay in seconds between connection retry attempts, defaults to 5
     connection_retry_delay: 5
+    # Exit the process after about 25 minutes of continuous unhealthiness so
+    # Docker can restart the container, defaults to 'true'.
+    # Set to 'false' to keep retrying instead (the behaviour before 1.6.1).
+    exit_on_prolonged_outage: true
 
   scheduler:
     # Whether of not to enable the scheduler, defaults to 'true'

@@ -29,6 +29,13 @@ from plex_auto_languages.exceptions import UserNotFound
 
 logger = get_logger()
 
+# Wall-clock budget for one connection attempt sequence. The main loop owns the
+# long-term retry with exponential backoff, so a single sequence must not spend
+# the whole retry budget (300 x 5 s = 25 minutes by default) before handing
+# control back: that would delay recovery by up to 25 minutes after Plex
+# returns, and made the reconnect watchdog unreachable in practice.
+CONNECTION_ATTEMPT_WINDOW_SECONDS = 60
+
 # Shared pool for the per-episode fan-out to all users inside
 # process_new_or_updated_episode. Reused across episodes instead of creating and
 # tearing down a ThreadPoolExecutor on every single episode (which, under the
@@ -411,10 +418,18 @@ class PlexServer(UnprivilegedPlexServer):
         self.notifier = notifier
         self.config = config
         super().__init__(url, token, session=session)
+        if self._plex is None:
+            # _get_server already logged the underlying reason. The token was
+            # never checked here, so blaming it would send the user looking in
+            # the wrong place.
+            raise UserNotFound(
+                "Unable to connect to the Plex server, so the user associated "
+                "with the token could not be identified"
+            )
         self._user = self._get_logged_user()
         if self._user is None:
             logger.error("Unable to find the user associated with the provided Plex Token")
-            raise UserNotFound
+            raise UserNotFound("Unable to find the user associated with the provided Plex Token")
         logger.info(f"Successfully connected as user '{self.username}' (id: {self.user_id})")
         self._alert_handler = None
         self._alert_listener = None
@@ -467,18 +482,44 @@ class PlexServer(UnprivilegedPlexServer):
         """
         max_tries = self.config.get("plex.connection_max_retries")
         retry_delay = self.config.get("plex.connection_retry_delay")
+        last_error = "no response"
+        attempts = 0
+        started_at = time.monotonic()
+        deadline = started_at + CONNECTION_ATTEMPT_WINDOW_SECONDS
         for attempt in range(1, max_tries + 1):
+            attempts = attempt
             try:
                 return BasePlexServer(url, token, session=session)
-            except Unauthorized:
+            except Unauthorized as exc:
+                last_error = f"Unauthorized: {exc}"
                 logger.warning(f"Unauthorized: Check your credentials. Retrying... (Attempt {attempt}/{max_tries})")
-            except (RequestsConnectionError, BadRequest):
-                logger.warning(f"Connection error: Unable to connect to Plex server. Retrying... (Attempt {attempt}/{max_tries})")
+            except BadRequest as exc:
+                # plexapi raises BadRequest for every HTTP status other than
+                # 200/401/404, so this covers 403 (token not permitted), 5xx
+                # from Plex or a reverse proxy, and 429. The status and body in
+                # the exception are the only way to tell those apart in the log.
+                last_error = f"{exc}"
+                logger.warning(f"Plex server returned an HTTP error: {exc} Retrying... (Attempt {attempt}/{max_tries})")
+            except RequestsConnectionError as exc:
+                # Connection refused, DNS failure, TLS failure or a connect
+                # timeout. Without the underlying reason the log cannot tell a
+                # stopped Plex from a broken network.
+                last_error = f"{type(exc).__name__}: {exc}"
+                logger.warning(f"Connection error: {last_error}. Retrying... (Attempt {attempt}/{max_tries})")
             except Exception as exc:
-                logger.error(f"Unexpected error during connection to Plex: {exc}", exc_info=True)
+                last_error = f"{type(exc).__name__}: {exc}"
+                logger.error(f"Unexpected error during connection to Plex: {last_error}", exc_info=True)
+            if time.monotonic() >= deadline:
+                logger.debug(
+                    f"Connection attempt window of {CONNECTION_ATTEMPT_WINDOW_SECONDS}s "
+                    f"reached after {attempts} attempts, returning to the reconnect loop"
+                )
+                break
             time.sleep(retry_delay)
 
-        logger.error(f"Failed to connect to Plex server after {max_tries} attempts")
+        logger.error(
+            f"Failed to connect to Plex server after {attempts} attempt(s) in "
+            f"{time.monotonic() - started_at:.0f}s (last error: {last_error})")
         return None
 
     def _get_logged_user(self) -> Optional[object]:
@@ -492,20 +533,47 @@ class PlexServer(UnprivilegedPlexServer):
             return None
         max_tries = self.config.get("plex.connection_max_retries")
         retry_delay = self.config.get("plex.connection_retry_delay")
+        last_error = "no response"
+        attempts = 0
+        started_at = time.monotonic()
+        deadline = started_at + CONNECTION_ATTEMPT_WINDOW_SECONDS
         for attempt in range(1, max_tries + 1):
+            attempts = attempt
             try:
                 plex_username = self._plex.myPlexAccount().username
                 for account in self._plex.systemAccounts():
                     if account.name == plex_username:
                         return account
+                logger.error(
+                    f"No system account on the Plex server matches the account "
+                    f"username '{plex_username}'"
+                )
                 return None
-            except RequestsConnectionError:
-                logger.warning(f"Connection error while fetching logged user. Retrying... (Attempt {attempt}/{max_tries})")
+            except Unauthorized as exc:
+                # Raised by plex.tv (not the local server) when the token is
+                # invalid, revoked or expired. Retrying cannot fix that.
+                logger.error(
+                    f"plex.tv rejected the configured token while fetching the "
+                    f"account (Unauthorized). Check whether the token is still "
+                    f"valid: {exc}"
+                )
+                return None
+            except RequestsConnectionError as exc:
+                last_error = f"{type(exc).__name__}: {exc}"
+                logger.warning(f"Connection error while fetching logged user: {last_error}. Retrying... (Attempt {attempt}/{max_tries})")
             except Exception as e:
-                logger.error(f"Error getting logged user: {str(e)}")
+                logger.error(f"Error getting logged user: {type(e).__name__}: {str(e)}")
                 return None
+            if time.monotonic() >= deadline:
+                logger.debug(
+                    f"Connection attempt window of {CONNECTION_ATTEMPT_WINDOW_SECONDS}s "
+                    f"reached after {attempts} attempts, returning to the reconnect loop"
+                )
+                break
             time.sleep(retry_delay)
-        logger.error(f"Failed to retrieve logged user after {max_tries} attempts")
+        logger.error(
+            f"Failed to retrieve logged user after {attempts} attempt(s) in "
+            f"{time.monotonic() - started_at:.0f}s (last error: {last_error})")
         return None
 
     def save_cache(self) -> None:
